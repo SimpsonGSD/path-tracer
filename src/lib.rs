@@ -60,9 +60,9 @@ pub fn run() {
             let ig = (255.99*col.g()) as i32;
             let ib = (255.99*col.b()) as i32;
 
-           //if ( i + (ny - j) * nx) % 120 == 0 {
-           //    println!("\rProgress: {} {}%", i + (ny - j) * nx, 100.0 * ((i+1) + ((ny - (j+1)) * nx)) as f64 / ((ny*nx) as f64));
-           //}
+           if ( i + (ny - j) * nx) % 120 == 0 {
+               print!("\rProgress: {} {}%", i + (ny - j) * nx, 100.0 * ((i+1) + ((ny - (j+1)) * nx)) as f64 / ((ny*nx) as f64));
+           }
 
             write!(output_image, "{} {} {}\n", ir, ig, ib).unwrap();
         }

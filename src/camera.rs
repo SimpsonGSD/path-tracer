@@ -25,9 +25,9 @@ impl Camera {
         let theta = vfov * PI / 180.0;
         let half_height = (theta/2.0).tan();
         let half_width = aspect * half_height;
-        let w = Vec3::new_unit_vector(origin - lookat);
-        let u = Vec3::new_unit_vector(vec3::cross(vup, w));
-        let v = vec3::cross(w,u);
+        let w = Vec3::new_unit_vector(&(origin - lookat));
+        let u = Vec3::new_unit_vector(&vec3::cross(&vup, &w));
+        let v = vec3::cross(&w,&u);
         Camera {
             origin,
             lower_left_corner: origin - u*half_width*focus_dist - v*half_height*focus_dist - w*focus_dist,
@@ -52,10 +52,10 @@ impl Camera {
 
 
 fn random_in_unit_disk() -> Vec3 {
-    let mut p = Vec3::new(random::rand(), random::rand(), 0.0)*2.0 - Vec3::new(1.0,1.0,0.0);
-    while vec3::dot(p,p) >= 1.0 {
-        p = Vec3::new(random::rand(), random::rand(), 0.0)*2.0 - Vec3::new(1.0,1.0,0.0);
+    let mut new_vector = Vec3::new(random::rand(), random::rand(), 0.0)*2.0 - Vec3::new(1.0,1.0,0.0);
+    while vec3::dot(&new_vector,&new_vector) >= 1.0 {
+        new_vector = Vec3::new(random::rand(), random::rand(), 0.0)*2.0 - Vec3::new(1.0,1.0,0.0);
     } 
 
-    p
+    new_vector
 }

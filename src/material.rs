@@ -14,13 +14,13 @@ fn random_in_unit_sphere() -> Vec3 {
     p
 }
 
-fn reflect(v: Vec3, n: Vec3) -> Vec3 {
-    v - 2.0*vec3::dot(v, n)*n
+fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
+    v - &(2.0*vec3::dot(v, n)*n)
 }
 
-fn refract(v: Vec3, n: Vec3, ni_over_nt: f64, refracted: &mut Vec3) -> bool {
-    let uv = Vec3::new_unit_vector(v);
-    let dt = vec3::dot(uv, n);
+fn refract(v: &Vec3, n: &Vec3, ni_over_nt: f64, refracted: &mut Vec3) -> bool {
+    let uv = Vec3::new_unit_vector(&v);
+    let dt = vec3::dot(&uv, &n);
     let discriminant = 1.0 - ni_over_nt*ni_over_nt*(1.0-dt*dt);
     if discriminant > 0.0 {
         *refracted = ni_over_nt*(uv - n*dt) - n*discriminant.sqrt();
@@ -37,7 +37,7 @@ fn schlick(cosine: f64, ref_idx: f64) -> f64 {
 }
 
 pub trait Material {
-    fn scatter(&self, r_in: Ray, rec: HitRecord, attenuation: &mut Vec3, scattered: &mut Ray) -> bool;
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord, attenuation: &mut Vec3, scattered: &mut Ray) -> bool;
 }
 
 pub struct Dielectric {
@@ -53,26 +53,26 @@ impl Dielectric {
 }
 
 impl Material for Dielectric {
-    fn scatter(&self, r_in: Ray, rec: HitRecord, attenuation: &mut Vec3, scattered: &mut Ray) -> bool {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord, attenuation: &mut Vec3, scattered: &mut Ray) -> bool {
         let outward_normal: Vec3;
-        let reflected = reflect(r_in.direction(), rec.normal);
+        let reflected = reflect(&r_in.direction(), &rec.normal);
         let ni_over_nt: f64;
         *attenuation = Vec3::new(1.0, 1.0, 1.0);
         let mut refracted = Vec3::new_zero_vector();
         let reflect_prob: f64;
         let cosine: f64;
 
-        if vec3::dot(r_in.direction(), rec.normal) > 0.0 {
+        if vec3::dot(&r_in.direction(), &rec.normal) > 0.0 {
             outward_normal = -rec.normal;
             ni_over_nt = self.ref_idx;
-            cosine = self.ref_idx * vec3::dot(r_in.direction(), rec.normal) / r_in.direction().length();
+            cosine = self.ref_idx * vec3::dot(&r_in.direction(), &rec.normal) / r_in.direction().length();
         } else {
             outward_normal = rec.normal;
             ni_over_nt = 1.0 / self.ref_idx;
-            cosine = -vec3::dot(r_in.direction(), rec.normal) / r_in.direction().length();
+            cosine = -vec3::dot(&r_in.direction(), &rec.normal) / r_in.direction().length();
         }
 
-        if refract(r_in.direction(), outward_normal, ni_over_nt, &mut refracted) {
+        if refract(&r_in.direction(), &outward_normal, ni_over_nt, &mut refracted) {
             reflect_prob = schlick(cosine, self.ref_idx);
         } else {
              //  scattered = ray(rec.p, reflected);
@@ -102,7 +102,7 @@ impl Lambertian {
 }
 
 impl Material for Lambertian {
-    fn scatter(&self, r_in: Ray, rec: HitRecord, attenuation: &mut Vec3, scattered: &mut Ray) -> bool {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord, attenuation: &mut Vec3, scattered: &mut Ray) -> bool {
         let target = rec.p + rec.normal + random_in_unit_sphere();
         *scattered = Ray::new(rec.p, target-rec.p, r_in.time());
         *attenuation = self.albedo.value(0.0, 0.0, rec.p);

@@ -20,7 +20,7 @@ impl Vec3 {
         Vec3::new(0.0,0.0,0.0)
     }
 
-    pub fn new_unit_vector(v: Vec3) -> Vec3 {
+    pub fn new_unit_vector(v: &Vec3) -> Vec3 {
         v.div_float(v.length())
     }
 
@@ -136,7 +136,7 @@ impl Vec3 {
 
 
 
-pub fn cross(v1: Vec3, v2: Vec3) -> Vec3 {
+pub fn cross(v1: &Vec3, v2: &Vec3) -> Vec3 {
     Vec3::new(
             v1.y()*v2.z() - v1.z()*v2.y(),
             v1.x()*v2.z() - v1.z()*v2.x(),
@@ -144,7 +144,7 @@ pub fn cross(v1: Vec3, v2: Vec3) -> Vec3 {
     )
 }
 
-pub fn dot(v1: Vec3, v2: Vec3) -> f64 {
+pub fn dot(v1: &Vec3, v2: &Vec3) -> f64 {
     v1.x()*v2.x() + v1.y()*v2.y() + v1.z()*v2.z()
 }
 
@@ -175,6 +175,14 @@ impl<'a> ops::Add<&'a Vec3> for &'a Vec3 {
 
     fn add(self, rhs: &'a Vec3) -> Vec3 {
         self.add_vec(rhs)
+    }
+}
+
+impl<'a> ops::Add<f64> for &'a Vec3 {
+    type Output = Vec3;
+
+    fn add(self, rhs: f64) -> Vec3 {
+        self.add_float(rhs)
     }
 }
 
@@ -211,6 +219,14 @@ impl<'a> ops::Sub<&'a Vec3> for &'a Vec3 {
 
     fn sub(self, rhs: &'a Vec3) -> Vec3 {
         self.sub_vec(rhs)
+    }
+}
+
+impl<'a> ops::Sub<f64> for &'a Vec3 {
+    type Output = Vec3;
+
+    fn sub(self, rhs: f64) -> Vec3 {
+        self.sub_float(rhs)
     }
 }
 
@@ -275,6 +291,14 @@ impl<'a> ops::Mul<&'a Vec3> for &'a Vec3 {
     }
 }
 
+impl<'a> ops::Mul<f64> for &'a Vec3 {
+    type Output = Vec3;
+
+    fn mul(self, rhs: f64) -> Vec3 {
+        self.mul_float(rhs)
+    }
+}
+
 impl<'a> ops::Mul<&'a Vec3> for f64 {
     type Output = Vec3;
 
@@ -311,11 +335,19 @@ impl ops::Div<f64> for Vec3 {
     }
 }
 
-impl<'a, 'b> ops::Div<&'b Vec3> for &'a Vec3 {
+impl<'a> ops::Div<&'a Vec3> for &'a Vec3 {
     type Output = Vec3;
 
-    fn div(self, rhs: &'b Vec3) -> Vec3 {
+    fn div(self, rhs: &'a Vec3) -> Vec3 {
         self.div_vec(rhs)
+    }
+}
+
+impl<'a> ops::Div<f64> for &'a Vec3 {
+    type Output = Vec3;
+
+    fn div(self, rhs: f64) -> Vec3 {
+        self.div_float(rhs)
     }
 }
 
