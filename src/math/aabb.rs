@@ -15,12 +15,12 @@ impl AABB {
         }
     }
 
-    pub fn min(&self) -> Vec3 {
-        self.min
+    pub fn min(&self) -> &Vec3 {
+        &self.min
     }
 
-    pub fn max(&self) -> Vec3 {
-        self.max
+    pub fn max(&self) -> &Vec3 {
+        &self.max
     }
 
     pub fn hit(&self, r: &Ray, tmin: f64, tmax: f64) -> bool {

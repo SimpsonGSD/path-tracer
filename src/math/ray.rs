@@ -15,12 +15,12 @@ impl Ray {
         }
     }
 
-    pub fn origin(&self) -> Vec3 {
-        self.origin
+    pub fn origin(&self) -> &Vec3 {
+        &self.origin
     }
 
-    pub fn direction(&self) -> Vec3 {
-        self.direction
+    pub fn direction(&self) -> &Vec3 {
+        &self.direction
     }
 
     pub fn time(&self) -> f64 {
@@ -28,6 +28,6 @@ impl Ray {
     }
 
     pub fn point_at_parameter(&self, t: f64) -> Vec3 {
-        self.origin + self.direction * t
+        &self.origin + &(&self.direction * t)
     }
 }

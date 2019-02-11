@@ -1,6 +1,6 @@
 use std::ops;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Vec3 {
     x: f64,
     y: f64,
@@ -13,6 +13,14 @@ impl Vec3 {
             x,
             y,
             z,
+        }
+    }
+
+    pub fn from_float(f: f64) -> Vec3 {
+        Vec3 {
+            x: f,
+            y: f,
+            z: f,
         }
     }
 
@@ -75,6 +83,12 @@ impl Vec3 {
         }
     }
 
+    fn add_vec_assign(&mut self, rhs: &Vec3) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+        self.z += rhs.z;
+    }
+
     fn add_float(&self, rhs: f64) -> Vec3 {
         Vec3 {
             x: self.x + rhs,
@@ -83,12 +97,24 @@ impl Vec3 {
         }
     }
 
+    fn add_float_assign(&mut self, rhs: f64) {
+        self.x += rhs;
+        self.y += rhs;
+        self.z += rhs;
+    }
+
     fn sub_vec(&self, rhs: &Vec3) -> Vec3 {
          Vec3 {
             x: self.x - rhs.x,
             y: self.y - rhs.y,
             z: self.z - rhs.z,
         }
+    }
+
+    fn sub_vec_assign(&mut self, rhs: &Vec3) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
+        self.z -= rhs.z;
     }
 
     fn sub_float(&self, rhs: f64) -> Vec3 {
@@ -132,14 +158,10 @@ impl Vec3 {
     }
 }
 
-
-
-
-
 pub fn cross(v1: &Vec3, v2: &Vec3) -> Vec3 {
     Vec3::new(
             v1.y()*v2.z() - v1.z()*v2.y(),
-            v1.x()*v2.z() - v1.z()*v2.x(),
+          -(v1.x()*v2.z() - v1.z()*v2.x()),
             v1.x()*v2.y() - v1.y()*v2.x()
     )
 }
@@ -170,6 +192,22 @@ impl ops::Add<f64> for Vec3 {
     }
 }
 
+impl<'a> ops::Add<Vec3> for &'a Vec3 {
+    type Output = Vec3;
+
+    fn add(self, rhs: Vec3) -> Vec3 {
+        self.add_vec(&rhs)
+    }
+}
+
+impl<'a> ops::Add<&'a Vec3> for Vec3 {
+    type Output = Vec3;
+
+    fn add(self, rhs: &'a Vec3) -> Vec3 {
+        self.add_vec(rhs)
+    }
+}
+
 impl<'a> ops::Add<&'a Vec3> for &'a Vec3 {
     type Output = Vec3;
 
@@ -188,13 +226,17 @@ impl<'a> ops::Add<f64> for &'a Vec3 {
 
 impl<> ops::AddAssign for Vec3 {
     fn add_assign(&mut self, rhs: Vec3) {
-        self.add_vec(&rhs);
+        self.x += rhs.x;
+        self.y += rhs.y;
+        self.z += rhs.z;
     }
 }
 
 impl<> ops::AddAssign<f64> for Vec3 {
     fn add_assign(&mut self, rhs: f64) {
-        self.add_float(rhs);
+        self.x += rhs;
+        self.y += rhs;
+        self.z += rhs;
     }
 }
 
@@ -211,6 +253,22 @@ impl ops::Sub<f64> for Vec3 {
 
     fn sub(self, rhs: f64) -> Vec3 {
         self.sub_float(rhs)
+    }
+}
+
+impl<'a> ops::Sub<Vec3> for &'a Vec3 {
+    type Output = Vec3;
+
+    fn sub(self, rhs: Vec3) -> Vec3 {
+        self.sub_vec(&rhs)
+    }
+}
+
+impl<'a> ops::Sub<&'a Vec3> for Vec3 {
+    type Output = Vec3;
+
+    fn sub(self, rhs: &'a Vec3) -> Vec3 {
+        self.sub_vec(rhs)
     }
 }
 
@@ -232,13 +290,17 @@ impl<'a> ops::Sub<f64> for &'a Vec3 {
 
 impl<> ops::SubAssign for Vec3 {
     fn sub_assign(&mut self, rhs: Vec3) {
-        self.sub_vec(&rhs);
+        self.x -= rhs.x;
+        self.y -= rhs.y;
+        self.z -= rhs.z;
     }
 }
 
 impl<> ops::SubAssign<f64> for Vec3 {
     fn sub_assign(&mut self, rhs: f64) {
-        self.sub_float(rhs);
+        self.x -= rhs;
+        self.y -= rhs;
+        self.z -= rhs;
     }
 }
 
@@ -282,6 +344,21 @@ impl ops::Mul<Vec3> for f32 {
     }
 }
 
+impl<'a> ops::Mul<Vec3> for &'a Vec3 {
+    type Output = Vec3;
+
+    fn mul(self, rhs: Vec3) -> Vec3 {
+        self.mul_vec(&rhs)
+    }
+}
+
+impl<'a> ops::Mul<&'a Vec3> for Vec3 {
+    type Output = Vec3;
+
+    fn mul(self, rhs: &'a Vec3) -> Vec3 {
+        self.mul_vec(rhs)
+    }
+}
 
 impl<'a> ops::Mul<&'a Vec3> for &'a Vec3 {
     type Output = Vec3;
@@ -309,13 +386,17 @@ impl<'a> ops::Mul<&'a Vec3> for f64 {
 
 impl<> ops::MulAssign for Vec3 {
     fn mul_assign(&mut self, rhs: Vec3) {
-        self.mul_vec(&rhs);
+        self.x *= rhs.x;
+        self.y *= rhs.y;
+        self.z *= rhs.z;
     }
 }
 
 impl<> ops::MulAssign<f64> for Vec3 {
     fn mul_assign(&mut self, rhs: f64) {
-        self.mul_float(rhs);
+        self.x *= rhs;
+        self.y *= rhs;
+        self.z *= rhs;
     }
 }
 
@@ -332,6 +413,22 @@ impl ops::Div<f64> for Vec3 {
 
     fn div(self, rhs: f64) -> Vec3 {
         self.div_float(rhs)
+    }
+}
+
+impl<'a> ops::Div<Vec3> for &'a Vec3 {
+    type Output = Vec3;
+
+    fn div(self, rhs: Vec3) -> Vec3 {
+        self.div_vec(&rhs)
+    }
+}
+
+impl<'a> ops::Div<&'a Vec3> for Vec3 {
+    type Output = Vec3;
+
+    fn div(self, rhs: &'a Vec3) -> Vec3 {
+        self.div_vec(rhs)
     }
 }
 
@@ -353,13 +450,17 @@ impl<'a> ops::Div<f64> for &'a Vec3 {
 
 impl<> ops::DivAssign for Vec3 {
     fn div_assign(&mut self, rhs: Vec3) {
-        self.div_vec(&rhs);
+        self.x /= rhs.x;
+        self.y /= rhs.y;
+        self.z /= rhs.z;
     }
 }
 
 impl<> ops::DivAssign<f64> for Vec3 {
     fn div_assign(&mut self, rhs: f64) {
-        self.div_float(rhs);
+        self.x /= rhs;
+        self.y /= rhs;
+        self.z /= rhs;
     }
 }
 
@@ -370,6 +471,14 @@ impl ops::Neg for Vec3 {
         Vec3::new(-self.x, -self.y, -self.z)
     }
 }   
+
+impl<'a> ops::Neg for &'a Vec3 {
+    type Output = Vec3;
+
+    fn neg(self) -> Vec3 {
+        Vec3::new(-self.x, -self.y, -self.z)
+    }
+} 
 
 #[cfg(test)]
 mod tests {

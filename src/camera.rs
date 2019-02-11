@@ -25,14 +25,14 @@ impl Camera {
         let theta = vfov * PI / 180.0;
         let half_height = (theta/2.0).tan();
         let half_width = aspect * half_height;
-        let w = Vec3::new_unit_vector(&(origin - lookat));
+        let w = Vec3::new_unit_vector(&(&origin - &lookat));
         let u = Vec3::new_unit_vector(&vec3::cross(&vup, &w));
         let v = vec3::cross(&w,&u);
         Camera {
-            origin,
-            lower_left_corner: origin - u*half_width*focus_dist - v*half_height*focus_dist - w*focus_dist,
-            horizontal: u*2.0*half_width*focus_dist,
-            vertical: v*2.0*half_height*focus_dist,
+            origin: origin.clone(),
+            lower_left_corner: &origin - &(&u*half_width*focus_dist) - &(&v*half_height*focus_dist) - &(&w*focus_dist),
+            horizontal: &u*2.0*half_width*focus_dist,
+            vertical: &v*2.0*half_height*focus_dist,
             u,
             v,
             w,
@@ -44,9 +44,9 @@ impl Camera {
 
     pub fn get_ray(&self, s: f64, t: f64) -> Ray {
         let rd = random_in_unit_disk()*self.lens_radius;
-        let offset = self.u*rd.x() + self.v*rd.y();
+        let offset = &self.u*rd.x() + &self.v*rd.y();
         let time = self.time0 + random::rand()*(self.time1 - self.time0);
-        Ray::new(self.origin + offset, self.lower_left_corner + self.horizontal*s + self.vertical*t - self.origin - offset, time)
+        Ray::new(&self.origin + &offset, &self.lower_left_corner + &self.horizontal*s + &self.vertical*t - &self.origin - offset, time)
     }
 }
 

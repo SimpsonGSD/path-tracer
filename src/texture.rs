@@ -1,7 +1,7 @@
 use math::vec3::Vec3;
 
 pub trait Texture {
-    fn value(&self, u: f64, v: f64, p: Vec3) -> Vec3;
+    fn value(&self, u: f64, v: f64, point: &Vec3) -> &Vec3;
 }
 
 pub struct ConstantTexture {
@@ -17,7 +17,7 @@ impl ConstantTexture {
 }
 
 impl Texture for ConstantTexture {
-    fn value(&self, u: f64, v: f64, p: Vec3) -> Vec3 {
-        self.colour
+    fn value(&self, u: f64, v: f64, point: &Vec3) -> &Vec3 {
+        &self.colour
     }
 }
