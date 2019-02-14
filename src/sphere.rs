@@ -58,7 +58,7 @@ impl Hitable for Sphere {
         None
     }
 
-    fn bounding_box(&self, t0: f64, t1: f64) -> Option<AABB> {
-        Some(AABB::new(&self.center - Vec3::from_float(self.radius), &self.center + Vec3::from_float(self.radius)))
+    fn bounding_box(&self, _t0: f64, _t1: f64) -> AABB {
+        AABB::new(&self.center - Vec3::from_float(self.radius), &self.center + Vec3::from_float(self.radius))
     }
 }

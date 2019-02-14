@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::f64;
+use std::time::{Duration, Instant};
 
 mod math;
 mod hitable;
@@ -8,6 +9,7 @@ mod material;
 mod texture;
 mod camera;
 mod sphere;
+mod bvh;
 
 use math::*;
 use math::vec3::Vec3;
@@ -19,8 +21,11 @@ use texture::ConstantTexture;
 use material::*;
 use sphere::Sphere;
 use std::rc::Rc;
+use bvh::BvhNode;
 
 pub fn run() {
+
+    let start_timer = Instant::now();
     
     let mut output_image = File::create("output.ppm").expect("Could not open file for write");
 
@@ -79,19 +84,18 @@ pub fn run() {
         }
     }
 
+    let duration = start_timer.elapsed();
     println!("");
-    println!("Done..");
+    println!("Done.. in {} s", duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9);
 }
 
 fn two_spheres() -> Box<Hitable> {
     let red_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(1.0, 0.0, 0.0)))));
     let blue_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 0.0, 1.0)))));
 
-    let n = 50;
-
-    let list: Vec<Box<dyn Hitable>> = vec![
-        Box::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
-        Box::new(Sphere::new(Vec3::new(0.0,  10.0, 0.0), 10.0, blue_material)),
+    let list: Vec<Rc<dyn Hitable>> = vec![
+        Rc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
+        Rc::new(Sphere::new(Vec3::new(0.0,  10.0, 0.0), 10.0, blue_material)),
     ];
 
     Box::new(HitableList::new(list))
@@ -103,14 +107,15 @@ fn four_spheres() -> Box<Hitable> {
     let green_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 1.0, 0.0)))));
     let yellow_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(1.0, 1.0, 0.0)))));
 
-    let list: Vec<Box<dyn Hitable>> = vec![
-        Box::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
-        Box::new(Sphere::new(Vec3::new(0.0,  -100.5, -1.0), 100.0, blue_material)),
-        Box::new(Sphere::new(Vec3::new(1.0,  0.0, -1.0), 0.5, green_material)),
-        Box::new(Sphere::new(Vec3::new(-1.0,  0.0, -1.0), 0.5, yellow_material)),
+    let list: Vec<Rc<dyn Hitable>> = vec![
+        Rc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
+        Rc::new(Sphere::new(Vec3::new(0.0,  -100.5, -1.0), 100.0, blue_material)),
+        Rc::new(Sphere::new(Vec3::new(1.0,  0.0, -1.0), 0.5, green_material)),
+        Rc::new(Sphere::new(Vec3::new(-1.0,  0.0, -1.0), 0.5, yellow_material)),
     ];
 
-    Box::new(HitableList::new(list))
+    Box::new(BvhNode::from_list(list, 0.0, 1.0))
+    //Box::new(HitableList::new(list))
 }
 
 fn color(r : &Ray, world: &Box<Hitable>, depth: i32) -> Vec3 {
@@ -128,13 +133,4 @@ fn color(r : &Ray, world: &Box<Hitable>, depth: i32) -> Vec3 {
         let sky = Vec3::new(0.5, 0.7, 1.0);
         return lerp(&white, &sky, t);
     }
-}
-
-fn sky_color(r : &Ray, world: &Box<Hitable>, depth: i32) -> Vec3 {
-
-    let unit_dir = Vec3::new_unit_vector(&r.direction());
-    let t = 0.5*(unit_dir.y() + 1.0);
-    let white = Vec3::from_float(1.0);
-    let sky = Vec3::new(0.5, 0.7, 1.0);
-    lerp(&white, &sky, t)  
 }

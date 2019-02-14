@@ -170,6 +170,29 @@ pub fn dot(v1: &Vec3, v2: &Vec3) -> f64 {
     v1.x()*v2.x() + v1.y()*v2.y() + v1.z()*v2.z()
 }
 
+impl ops::Index<usize> for Vec3 {
+    type Output = f64;
+    fn index<'a>(&'a self, i: usize) -> &'a f64 {
+        match i {
+            0 => &self.x,
+            1 => &self.y,
+            2 => &self.z,
+            _ => unreachable!()
+        }
+    }
+}
+
+impl ops::IndexMut<usize> for Vec3 {
+    fn index_mut<'a>(&'a mut self, i: usize) -> &'a mut f64 {
+        match i {
+            0 => &mut self.x,
+            1 => &mut self.y,
+            2 => &mut self.z,
+            _ => unreachable!()
+        }
+    }
+}
+
 impl PartialEq<Vec3> for Vec3 {
     fn eq(&self, other: &Vec3) -> bool {
         self.equal(other)

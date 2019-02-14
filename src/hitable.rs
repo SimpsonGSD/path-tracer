@@ -24,15 +24,15 @@ impl HitRecord {
 
 pub trait Hitable {
     fn hit(&self, r: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord>;
-    fn bounding_box(&self, t0: f64, t1: f64) -> Option<AABB>;
+    fn bounding_box(&self, t0: f64, t1: f64) -> AABB;
 }
 
 pub struct HitableList {
-    list: Vec<Box<Hitable>>
+    list: Vec<Rc<Hitable>>
 }
 
 impl HitableList {
-    pub fn new(list: Vec<Box<Hitable>>) -> HitableList {
+    pub fn new(list: Vec<Rc<Hitable>>) -> HitableList {
         HitableList { list }
     }
 }
@@ -50,7 +50,7 @@ impl Hitable for HitableList {
 
         hitrecord
     }
-    fn bounding_box(&self, t0: f64, t1: f64) -> Option<AABB> {
-        None 
+    fn bounding_box(&self, t0: f64, t1: f64) -> AABB {
+        unreachable!(); 
     }
 }
