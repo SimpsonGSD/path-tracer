@@ -23,19 +23,30 @@ use sphere::Sphere;
 use std::rc::Rc;
 use bvh::BvhNode;
 
-pub fn run() {
+#[cfg(target_os = "windows")]
+extern crate winapi;
 
-    let start_timer = Instant::now();
-    
-    let mut output_image = File::create("output.ppm").expect("Could not open file for write");
+extern crate winit;
+use winit::{ControlFlow, Event, EventsLoop, WindowBuilder, Window, WindowEvent};
+use winit::dpi::LogicalSize;
+
+#[cfg(target_os = "windows")]
+pub fn create_window() {
+
+}
+
+pub fn run() {
 
     let nx = 600;
     let ny = 300;
-    let ns = 50; // number of samples
+    let ns = 10; // number of samples
 
-    // write image header
-    write!(output_image, "P3\n{} {}\n255\n", nx, ny).expect("failed to write to image file");
+    let mut events_loop = winit::EventsLoop::new();
+    let builder = WindowBuilder::new();
+    let window = builder.with_dimensions(LogicalSize{width: nx as f64, height: ny as f64}).build(&events_loop).unwrap();
 
+    let start_timer = Instant::now();
+    
     println!("Starting.. image size ({} x {})", nx, ny);
 
     let world = two_spheres();
@@ -50,6 +61,8 @@ pub fn run() {
     let aspect: f64 = (nx as f64)/(ny as f64);
     //let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0 ,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0);
     let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 90.0, aspect, aperture, dist_to_focus, 0.0, 1.0);
+
+    let mut image_buffer = Vec::with_capacity(nx*ny*3);
 
     for j in (0..ny).rev() {
         for i in 0..nx {
@@ -71,22 +84,39 @@ pub fn run() {
             col = col / ns as f64;
             col = Vec3::new(col.x().sqrt(), col.y().sqrt(), col.z().sqrt()); // Gamma correct 1/2.0
 
-            let ir = (255.99*col.r()) as i32;
-            let ig = (255.99*col.g()) as i32;
-            let ib = (255.99*col.b()) as i32;
+            let ir = (255.99*col.r()) as u8;
+            let ig = (255.99*col.g()) as u8;
+            let ib = (255.99*col.b()) as u8;
 
-           if ( i + (ny - j) * nx) % 400 == 0 {
-               print!("\rProgress: {} {}%", i + (ny - j) * nx, 100.0 * ((i+1) + ((ny - (j+1)) * nx)) as f64 / ((ny*nx) as f64));
-           }
+            if ( i + (ny - j) * nx) % 400 == 0 {
+                print!("\rProgress: {} {}%", i + (ny - j) * nx, 100.0 * ((i+1) + ((ny - (j+1)) * nx)) as f64 / ((ny*nx) as f64));
+            }
 
-           // TODO(SS): Fix this and write to buffer as this is slow to do every loop.
-           write!(output_image, "{} {} {}\n", ir, ig, ib).expect("failed to write image file");
+            image_buffer.push(ir);
+            image_buffer.push(ig);
+            image_buffer.push(ib);
         }
     }
+
+    // write image 
+    let mut output_image = File::create("output.ppm").expect("Could not open file for write");
+    let header = format!("P6 {} {} 255\n", nx, ny);
+    output_image.write(header.as_bytes()).expect("failed to write to image file");
+    output_image.write(&image_buffer).expect("failed to write to image");
 
     let duration = start_timer.elapsed();
     println!("");
     println!("Done.. in {} s", duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9);
+
+    events_loop.run_forever(|event| {
+    match event {
+            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                println!("The close button was pressed; stopping");
+                ControlFlow::Break
+            },
+            _ => ControlFlow::Continue,
+        }
+    });
 }
 
 fn two_spheres() -> Box<Hitable> {

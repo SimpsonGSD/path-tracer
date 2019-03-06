@@ -5,3 +5,5 @@ authors = ["Scott"]
 
 [dependencies]
 rand = "0.6.1"
+winapi = "0.3.6"
+winit = "0.18.1"
