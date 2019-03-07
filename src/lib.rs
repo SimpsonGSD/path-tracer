@@ -147,7 +147,7 @@ pub fn run() {
                 print!("\r{}", &progress_string);
             }
 
-            let offset = (j * nx + i) as usize;
+            let offset = (j * nx * 3 + i * 3) as usize;
             bgr_image_buffer[offset] = ib;
             bgr_image_buffer[offset+1] = ig;
             bgr_image_buffer[offset+2] = ir;
