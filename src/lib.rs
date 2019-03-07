@@ -89,11 +89,15 @@ pub fn run() {
 
     let nx: u32 = 600;
     let ny: u32 = 300;
-    let ns: u32 = 1; // number of samples
+    let ns: u32 = 10; // number of samples
+
+    let window_width = 1920.0;
+    let window_height = 1080.0;
 
     let mut events_loop = winit::EventsLoop::new();
     let builder = WindowBuilder::new();
-    let window = builder.with_dimensions(LogicalSize{width: nx as f64, height: ny as f64}).build(&events_loop).unwrap();
+    let window = builder.with_dimensions(LogicalSize{width: window_width, height: window_height}).build(&events_loop).unwrap();
+    window.set_title("Ray Tracer");
 
     let start_timer = Instant::now();
     
@@ -141,8 +145,12 @@ pub fn run() {
             let ib = (255.99*col.b()) as u8;
 
             if ( i + (ny - j) * nx) % 400 == 0 {
+                
+                // Update frame buffer to show progress
+                update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
+                
                 let progress = 100.0 * ((i+1) + ((ny - (j+1)) * nx)) as f64 / ((ny*nx) as f64);
-                let progress_string = format!("Progress {} {}%",  i + (ny - j) * nx, progress);
+                let progress_string = format!("Ray Tracer: Progress {} {}%",  i + (ny - j) * nx, progress);
                 window.set_title(&progress_string);
                 print!("\r{}", &progress_string);
             }
@@ -167,7 +175,7 @@ pub fn run() {
     let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
     println!("");
     println!("Done.. in {} s", duration_in_secs);
-    window.set_title(&format!("Done.. in {}s", duration_in_secs));
+    window.set_title(&format!("Ray Tracer: Done.. in {}s", duration_in_secs));
 
     update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
 
