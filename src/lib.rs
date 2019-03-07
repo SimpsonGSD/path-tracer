@@ -30,6 +30,12 @@ extern crate winit;
 use winit::{ControlFlow, Event, EventsLoop, WindowBuilder, Window, WindowEvent};
 use winit::dpi::LogicalSize;
 
+pub fn get_physical_window_size(window: &winit::Window) -> (f64, f64) {
+    let dpi_factor = window.get_current_monitor().get_hidpi_factor();
+    let window_size = window.get_inner_size().unwrap().to_physical(dpi_factor);
+    (window_size.width, window_size.height)
+}
+
 #[cfg(target_os = "windows")]
 pub fn update_window_framebuffer(window: &winit::Window, buffer: &mut Vec<u8>, buffer_width_height: (u32, u32)) {
     use winapi::shared::windef::HWND;
@@ -39,8 +45,7 @@ pub fn update_window_framebuffer(window: &winit::Window, buffer: &mut Vec<u8>, b
     use winapi::ctypes::c_void;
     
     let hwnd = window.get_hwnd() as HWND;
-    let dpi_factor = window.get_current_monitor().get_hidpi_factor();
-    let window_size = window.get_inner_size().unwrap().to_physical(dpi_factor);
+    let window_size = get_physical_window_size(&window);
 
     unsafe {
         let hdc = GetDC(hwnd);
@@ -70,8 +75,8 @@ pub fn update_window_framebuffer(window: &winit::Window, buffer: &mut Vec<u8>, b
         let result = StretchDIBits(hdc,
                       0,
                       0,
-                      window_size.width as i32,
-                      window_size.height as i32,
+                      window_size.0 as i32,
+                      window_size.1 as i32,
                       0,
                       0,
                       buffer_width_height.0 as i32,
@@ -91,8 +96,8 @@ pub fn run() {
     let ny: u32 = 300;
     let ns: u32 = 10; // number of samples
 
-    let window_width = 1920.0;
-    let window_height = 1080.0;
+    let mut window_width = 1920.0;
+    let mut window_height = 1080.0;
 
     let mut events_loop = winit::EventsLoop::new();
     let builder = WindowBuilder::new();
@@ -143,9 +148,35 @@ pub fn run() {
             let ir = (255.99*col.r()) as u8;
             let ig = (255.99*col.g()) as u8;
             let ib = (255.99*col.b()) as u8;
+            
+            let offset = (j * nx * 3 + i * 3) as usize;
+            bgr_image_buffer[offset] = ib;
+            bgr_image_buffer[offset+1] = ig;
+            bgr_image_buffer[offset+2] = ir;
+            rgb_image_buffer[offset] = ir;
+            rgb_image_buffer[offset+1] = ig;
+            rgb_image_buffer[offset+2] = ib;
+
 
             if ( i + (ny - j) * nx) % 400 == 0 {
                 
+                // Poll message loop while we trace
+                events_loop.poll_events(|event| {
+                    use winit::VirtualKeyCode;
+                    match event {
+                        Event::WindowEvent { event, .. } => match event {
+                            WindowEvent::KeyboardInput { input, .. } => {
+                                if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
+                                    std::process::exit(0);
+                                }
+                            }
+                            WindowEvent::CloseRequested => std::process::exit(0),
+                            _ => {},
+                        },
+                        _ => {},
+                    }
+                });
+
                 // Update frame buffer to show progress
                 update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
                 
@@ -154,14 +185,6 @@ pub fn run() {
                 window.set_title(&progress_string);
                 print!("\r{}", &progress_string);
             }
-
-            let offset = (j * nx * 3 + i * 3) as usize;
-            bgr_image_buffer[offset] = ib;
-            bgr_image_buffer[offset+1] = ig;
-            bgr_image_buffer[offset+2] = ir;
-            rgb_image_buffer[offset] = ir;
-            rgb_image_buffer[offset+1] = ig;
-            rgb_image_buffer[offset+2] = ib;
         }
     }
 
@@ -180,12 +203,24 @@ pub fn run() {
     update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
 
     events_loop.run_forever(|event| {
-    match event {
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                println!("The close button was pressed; stopping");
-                ControlFlow::Break
+        use winit::VirtualKeyCode;
+        match event {
+           Event::WindowEvent { event, .. } => match event {
+                WindowEvent::KeyboardInput { input, .. } => {
+                    if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
+                        ControlFlow::Break
+                    } else {
+                        ControlFlow::Continue
+                    }
+                }
+                WindowEvent::CloseRequested => winit::ControlFlow::Break,
+                WindowEvent::Resized(size) => {
+                    update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
+                    ControlFlow::Continue
+                },
+                _ => ControlFlow::Continue,
             },
-            _ => ControlFlow::Continue,
+             _ => ControlFlow::Continue,
         }
     });
 }
