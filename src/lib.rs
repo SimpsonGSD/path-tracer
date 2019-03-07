@@ -31,15 +31,65 @@ use winit::{ControlFlow, Event, EventsLoop, WindowBuilder, Window, WindowEvent};
 use winit::dpi::LogicalSize;
 
 #[cfg(target_os = "windows")]
-pub fn create_window() {
+pub fn update_window_framebuffer(window: &winit::Window, buffer: &mut Vec<u8>, buffer_width_height: (u32, u32)) {
+    use winapi::shared::windef::HWND;
+    use winapi::um::winuser::GetDC;
+    use winit::os::windows::WindowExt;
+    use winapi::um::wingdi::{StretchDIBits, DIB_RGB_COLORS, SRCCOPY, BITMAPINFO, BI_RGB, RGBQUAD, BITMAPINFOHEADER};
+    use winapi::ctypes::c_void;
+    
+    let hwnd = window.get_hwnd() as HWND;
+    let dpi_factor = window.get_current_monitor().get_hidpi_factor();
+    let window_size = window.get_inner_size().unwrap().to_physical(dpi_factor);
+
+    unsafe {
+        let hdc = GetDC(hwnd);
+        let bmi_colors = [RGBQUAD {
+            rgbBlue: 0, 
+            rgbGreen: 0, 
+            rgbRed: 0, 
+            rgbReserved: 0 
+        }];
+        let bitmap_header = BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFO>() as u32,
+            biWidth: buffer_width_height.0 as i32,
+            biHeight: buffer_width_height.1 as i32,
+            biPlanes: 1,
+            biBitCount: 24,
+            biCompression:  BI_RGB,
+            biSizeImage: buffer_width_height.1 * buffer_width_height.0 * 3,
+            biXPelsPerMeter: 0,
+            biYPelsPerMeter: 0,
+            biClrUsed: 0,
+            biClrImportant: 0
+        };
+        let bitmap_info = BITMAPINFO{
+            bmiHeader: bitmap_header,
+            bmiColors: bmi_colors
+        };
+        let result = StretchDIBits(hdc,
+                      0,
+                      0,
+                      window_size.width as i32,
+                      window_size.height as i32,
+                      0,
+                      0,
+                      buffer_width_height.0 as i32,
+                      buffer_width_height.1 as i32, 
+                      buffer.as_mut_ptr() as *mut c_void,
+                      &bitmap_info,
+                      DIB_RGB_COLORS,
+                      SRCCOPY);
+        assert_ne!(result, 0);
+    };
 
 }
 
 pub fn run() {
 
-    let nx = 600;
-    let ny = 300;
-    let ns = 10; // number of samples
+    let nx: u32 = 600;
+    let ny: u32 = 300;
+    let ns: u32 = 1; // number of samples
 
     let mut events_loop = winit::EventsLoop::new();
     let builder = WindowBuilder::new();
@@ -62,7 +112,9 @@ pub fn run() {
     //let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0 ,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0);
     let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 90.0, aspect, aperture, dist_to_focus, 0.0, 1.0);
 
-    let mut image_buffer = Vec::with_capacity(nx*ny*3);
+    let mut bgr_image_buffer: Vec<u8> = vec![0; (nx*ny*3) as usize];
+    let mut rgb_image_buffer: Vec<u8> = vec![0; (nx*ny*3) as usize];
+    update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
 
     for j in (0..ny).rev() {
         for i in 0..nx {
@@ -89,12 +141,19 @@ pub fn run() {
             let ib = (255.99*col.b()) as u8;
 
             if ( i + (ny - j) * nx) % 400 == 0 {
-                print!("\rProgress: {} {}%", i + (ny - j) * nx, 100.0 * ((i+1) + ((ny - (j+1)) * nx)) as f64 / ((ny*nx) as f64));
+                let progress = 100.0 * ((i+1) + ((ny - (j+1)) * nx)) as f64 / ((ny*nx) as f64);
+                let progress_string = format!("Progress {} {}%",  i + (ny - j) * nx, progress);
+                window.set_title(&progress_string);
+                print!("\r{}", &progress_string);
             }
 
-            image_buffer.push(ir);
-            image_buffer.push(ig);
-            image_buffer.push(ib);
+            let offset = (j * nx + i) as usize;
+            bgr_image_buffer[offset] = ib;
+            bgr_image_buffer[offset+1] = ig;
+            bgr_image_buffer[offset+2] = ir;
+            rgb_image_buffer[offset] = ir;
+            rgb_image_buffer[offset+1] = ig;
+            rgb_image_buffer[offset+2] = ib;
         }
     }
 
@@ -102,11 +161,15 @@ pub fn run() {
     let mut output_image = File::create("output.ppm").expect("Could not open file for write");
     let header = format!("P6 {} {} 255\n", nx, ny);
     output_image.write(header.as_bytes()).expect("failed to write to image file");
-    output_image.write(&image_buffer).expect("failed to write to image");
+    output_image.write(&rgb_image_buffer).expect("failed to write to image");
 
     let duration = start_timer.elapsed();
+    let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
     println!("");
-    println!("Done.. in {} s", duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9);
+    println!("Done.. in {} s", duration_in_secs);
+    window.set_title(&format!("Done.. in {}s", duration_in_secs));
+
+    update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
 
     events_loop.run_forever(|event| {
     match event {
