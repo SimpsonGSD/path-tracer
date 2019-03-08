@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::f64;
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 
 mod math;
 mod hitable;
@@ -27,8 +27,11 @@ use bvh::BvhNode;
 extern crate winapi;
 
 extern crate winit;
-use winit::{ControlFlow, Event, EventsLoop, WindowBuilder, Window, WindowEvent};
+use winit::{ControlFlow, Event, WindowBuilder, WindowEvent};
 use winit::dpi::LogicalSize;
+
+//extern crate rayon;
+//use rayon::prelude::*;
 
 pub fn get_physical_window_size(window: &winit::Window) -> (f64, f64) {
     let dpi_factor = window.get_current_monitor().get_hidpi_factor();
@@ -94,10 +97,10 @@ pub fn run() {
 
     let nx: u32 = 1600;
     let ny: u32 = 900;
-    let ns: u32 = 100; // number of samples
+    let ns: u32 = 50; // number of samples
 
-    let mut window_width = 1920.0;
-    let mut window_height = 1080.0;
+    let window_width = 1920.0;
+    let window_height = 1080.0;
 
     let mut events_loop = winit::EventsLoop::new();
     let builder = WindowBuilder::new();
@@ -108,7 +111,7 @@ pub fn run() {
     
     println!("Starting.. image size ({} x {})", nx, ny);
 
-    let world = two_spheres();
+    //let world = two_spheres();
     let world = four_spheres();
 
     //let lookfrom = Vec3::new(13.0,2.0,3.0);
@@ -129,7 +132,7 @@ pub fn run() {
         for i in 0..nx {
 
             let mut col = Vec3::new_zero_vector();
-            for s in 0..ns {
+            for _ in 0..ns {
                 let random = random::rand();
                 let u: f64 = ((i as f64) + random) / (nx as f64);
                 let random = random::rand();
@@ -213,7 +216,7 @@ pub fn run() {
                     }
                 }
                 WindowEvent::CloseRequested => winit::ControlFlow::Break,
-                WindowEvent::Resized(size) => {
+                WindowEvent::Resized(..) => {
                     update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
                     ControlFlow::Continue
                 },
@@ -224,6 +227,7 @@ pub fn run() {
     });
 }
 
+#[allow(dead_code)]
 fn two_spheres() -> Box<Hitable> {
     let red_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(1.0, 0.0, 0.0)))));
     let blue_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 0.0, 1.0)))));

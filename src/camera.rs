@@ -5,6 +5,7 @@ use math::vec3::Vec3;
 use math::random;
 use std::f64::consts::PI;
 
+#[allow(dead_code)]
 pub struct Camera {
     origin: Vec3,
     lower_left_corner: Vec3,

@@ -50,7 +50,7 @@ impl Hitable for HitableList {
 
         hitrecord
     }
-    fn bounding_box(&self, t0: f64, t1: f64) -> AABB {
+    fn bounding_box(&self, _t0: f64, _t1: f64) -> AABB {
         unreachable!(); 
     }
 }

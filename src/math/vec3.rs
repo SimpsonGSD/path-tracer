@@ -83,12 +83,6 @@ impl Vec3 {
         }
     }
 
-    fn add_vec_assign(&mut self, rhs: &Vec3) {
-        self.x += rhs.x;
-        self.y += rhs.y;
-        self.z += rhs.z;
-    }
-
     fn add_float(&self, rhs: f64) -> Vec3 {
         Vec3 {
             x: self.x + rhs,
@@ -97,24 +91,12 @@ impl Vec3 {
         }
     }
 
-    fn add_float_assign(&mut self, rhs: f64) {
-        self.x += rhs;
-        self.y += rhs;
-        self.z += rhs;
-    }
-
     fn sub_vec(&self, rhs: &Vec3) -> Vec3 {
          Vec3 {
             x: self.x - rhs.x,
             y: self.y - rhs.y,
             z: self.z - rhs.z,
         }
-    }
-
-    fn sub_vec_assign(&mut self, rhs: &Vec3) {
-        self.x -= rhs.x;
-        self.y -= rhs.y;
-        self.z -= rhs.z;
     }
 
     fn sub_float(&self, rhs: f64) -> Vec3 {

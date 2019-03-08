@@ -7,9 +7,12 @@ use texture::Texture;
 use std::rc::Rc;
 
 fn random_in_unit_sphere() -> Vec3 {
-    let mut p: Vec3 = 2.0 * Vec3::new(random::rand(), random::rand(), random::rand()) - Vec3::new(1.0, 1.0, 1.0);
-    while p.squared_length() >= 1.0 {
+    let mut p: Vec3;
+    loop  {
         p = 2.0 * Vec3::new(random::rand(), random::rand(), random::rand()) - Vec3::new(1.0, 1.0, 1.0);
+        if p.squared_length() < 1.0 {
+            break
+        }
     }
 
     p
