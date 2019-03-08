@@ -92,9 +92,9 @@ pub fn update_window_framebuffer(window: &winit::Window, buffer: &mut Vec<u8>, b
 
 pub fn run() {
 
-    let nx: u32 = 600;
-    let ny: u32 = 300;
-    let ns: u32 = 10; // number of samples
+    let nx: u32 = 1600;
+    let ny: u32 = 900;
+    let ns: u32 = 100; // number of samples
 
     let mut window_width = 1920.0;
     let mut window_height = 1080.0;
@@ -156,35 +156,34 @@ pub fn run() {
             rgb_image_buffer[offset] = ir;
             rgb_image_buffer[offset+1] = ig;
             rgb_image_buffer[offset+2] = ib;
+        }
 
-
-            if ( i + (ny - j) * nx) % 400 == 0 {
-                
-                // Poll message loop while we trace
-                events_loop.poll_events(|event| {
-                    use winit::VirtualKeyCode;
-                    match event {
-                        Event::WindowEvent { event, .. } => match event {
-                            WindowEvent::KeyboardInput { input, .. } => {
-                                if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
-                                    std::process::exit(0);
-                                }
+        if j % 20 == 0 {
+            
+            // Poll message loop while we trace
+            events_loop.poll_events(|event| {
+                use winit::VirtualKeyCode;
+                match event {
+                    Event::WindowEvent { event, .. } => match event {
+                        WindowEvent::KeyboardInput { input, .. } => {
+                            if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
+                                std::process::exit(0);
                             }
-                            WindowEvent::CloseRequested => std::process::exit(0),
-                            _ => {},
-                        },
+                        }
+                        WindowEvent::CloseRequested => std::process::exit(0),
                         _ => {},
-                    }
-                });
+                    },
+                    _ => {},
+                }
+            });
 
-                // Update frame buffer to show progress
-                update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
-                
-                let progress = 100.0 * ((i+1) + ((ny - (j+1)) * nx)) as f64 / ((ny*nx) as f64);
-                let progress_string = format!("Ray Tracer: Progress {} {}%",  i + (ny - j) * nx, progress);
-                window.set_title(&progress_string);
-                print!("\r{}", &progress_string);
-            }
+            // Update frame buffer to show progress
+            update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
+            
+            let progress = 100.0 * ((ny - (j+1)) * nx) as f64 / ((ny*nx) as f64);
+            let progress_string = format!("Ray Tracer: Progress {} {}%",  (ny - j) * nx, progress);
+            window.set_title(&progress_string);
+            print!("\r{}", &progress_string);
         }
     }
 
@@ -243,11 +242,14 @@ fn four_spheres() -> Box<Hitable> {
     let green_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 1.0, 0.0)))));
     let yellow_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(1.0, 1.0, 0.0)))));
 
+    let dielectric_material = Rc::new(Dielectric::new(1.2));
+
     let list: Vec<Rc<dyn Hitable>> = vec![
         Rc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
         Rc::new(Sphere::new(Vec3::new(0.0,  -100.5, -1.0), 100.0, blue_material)),
         Rc::new(Sphere::new(Vec3::new(1.0,  0.0, -1.0), 0.5, green_material)),
         Rc::new(Sphere::new(Vec3::new(-1.0,  0.0, -1.0), 0.5, yellow_material)),
+        Rc::new(Sphere::new(Vec3::new(-2.0,  0.0, -1.0), 0.5, dielectric_material)),
     ];
 
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
