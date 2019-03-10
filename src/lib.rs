@@ -47,9 +47,9 @@ const RUN_SINGLE_THREADED: bool = false;
 
 pub fn run() {
 
-    let nx: u32 = 1600;
-    let ny: u32 = 900;
-    let ns: u32 = 50; // number of samples
+    let nx: u32 = 1280;
+    let ny: u32 = 720;
+    let ns: u32 = 200; // number of samples
     let image_size = (nx,ny);
 
     let window_width = nx as f64;
@@ -231,12 +231,13 @@ fn two_spheres() -> Box<Hitable> {
 }
 
 fn four_spheres() -> Box<Hitable> {
-    let red_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(1.0, 0.0, 0.0)))));
-    let blue_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 0.0, 1.0)))));
-    let green_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 1.0, 0.0)))));
-    let yellow_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(1.0, 1.0, 0.0)))));
+    let red_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.9, 0.0, 0.0)))));
+    let blue_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 0.1, 0.8)))));
+    let green_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 0.9, 0.0)))));
+    let yellow_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.0)))));
 
     let dielectric_material = Rc::new(Dielectric::new(1.2));
+    let metal_material = Rc::new(Metal::new(Vec3::from_float(0.9), 0.5));
 
     let list: Vec<Rc<Hitable>> = vec![
         Rc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
@@ -244,6 +245,7 @@ fn four_spheres() -> Box<Hitable> {
         Rc::new(Sphere::new(Vec3::new(1.0,  0.0, -1.0), 0.5, green_material)),
         Rc::new(Sphere::new(Vec3::new(-1.0,  0.0, -1.0), 0.5, yellow_material)),
         Rc::new(Sphere::new(Vec3::new(-2.0,  0.0, -1.0), 0.5, dielectric_material)),
+        Rc::new(Sphere::new(Vec3::new(2.0,  0.0, -1.0), 0.5, metal_material)),
     ];
 
     Box::new(BvhNode::from_list(list, 0.0, 1.0))

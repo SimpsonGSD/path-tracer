@@ -38,7 +38,8 @@ fn schlick(cosine: f64, ref_idx: f64) -> f64 {
 }
 
 pub trait Material {
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Ray, Vec3)>;
+    // TODO(SS): return struct ray and attenuation so it's more obvious what these are
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Ray, Vec3)>; 
 }
 
 pub struct Dielectric {
@@ -88,6 +89,36 @@ impl Material for Dielectric {
         }
 
         Some((scattered, attenuation))
+    }
+}
+
+pub struct Metal {
+    albedo: Vec3,
+    fuzz: f64,
+}
+
+impl Metal {
+    pub fn new(albedo: Vec3, fuzz: f64) -> Metal {
+        Metal {
+            albedo,
+            fuzz: fuzz.min(1.0)
+        }
+    }
+}
+
+impl Material for Metal{
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Ray, Vec3)> {
+        let reflected = reflect(&Vec3::new_unit_vector(&r_in.direction()), &rec.normal);
+        let outgoing_ray_dir = reflected + self.fuzz*random_in_unit_sphere();
+        let scattered = Ray::new(rec.p.clone(), outgoing_ray_dir, r_in.time());
+
+        // check to see if outgoing ray is reflect externally or not, otherwise it is absorbed
+        if vec3::dot(&scattered.direction(), &rec.normal) > 0.0 {
+            let attenuation = self.albedo.clone();
+            Some((scattered, attenuation))
+        } else {
+            None
+        }
     }
 }
 
