@@ -1,9 +1,5 @@
-//mod math;
-use math::ray::Ray;
-use math::vec3;
-use math::vec3::Vec3;
-use math::random;
 use std::f64::consts::PI;
+use math::*;
 
 #[allow(dead_code)]
 pub struct Camera {

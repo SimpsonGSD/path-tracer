@@ -1,4 +1,4 @@
-use math::vec3::Vec3;
+use math::*;
 
 pub trait Texture {
     fn value(&self, u: f64, v: f64, point: &Vec3) -> &Vec3;

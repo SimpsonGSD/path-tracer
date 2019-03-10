@@ -1,7 +1,4 @@
-use math::vec3;
-use math::vec3::Vec3;
-use math::ray::Ray;
-use math::aabb::AABB;
+use math::*;
 use material::Material;
 use hitable::*;
 use std::rc::Rc;

@@ -1,8 +1,5 @@
-use math::ray::Ray;
-use math::vec3;
-use math::vec3::Vec3;
+use math::*;
 use hitable::HitRecord;
-use math::random;
 use texture::Texture;
 use std::rc::Rc;
 

@@ -1,9 +1,7 @@
 
 use hitable::*;
 use std::rc::Rc;
-use math::random;
-use math::aabb::AABB;
-use math::ray::Ray;
+use math::*;
 
 pub struct BvhNode {
     left: Rc<Hitable>,
