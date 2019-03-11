@@ -31,6 +31,7 @@ mod sphere;
 mod bvh;
 mod trace;
 mod winit_utils;
+mod jobs;
 
 use math::*;
 use hitable::*;
@@ -41,6 +42,7 @@ use sphere::Sphere;
 use std::rc::Rc;
 use bvh::BvhNode;
 use trace::*;
+use jobs::*;
 
 // For tracking multithreading bugs
 const RUN_SINGLE_THREADED: bool = false;
@@ -90,6 +92,10 @@ pub fn run() {
     let remaining_tasks = Arc::new(AtomicUsize::new((num_tasks_xy.0*num_tasks_xy.1) as usize));
 
     update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks_xy.0 * num_tasks_xy.1));
+
+    let thread_pool = jobs::ThreadPool::new();
+
+    if false {
 
     let run_single_threaded = RUN_SINGLE_THREADED;
     if !run_single_threaded {
@@ -148,6 +154,8 @@ pub fn run() {
         trace_scene_mt(&cam, &world, ns, start_xy, end_xy, image_buffer, image_size, remaining_tasks, window_lock, &window);
     }
 
+    }
+
     // stats
     let duration = start_timer.elapsed();
     let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
@@ -181,6 +189,8 @@ pub fn run() {
              _ => ControlFlow::Continue,
         }
     });
+
+    thread_pool.destroy();
 }
 
 fn update_window_title_status(window: &winit::Window, status: &str) {
