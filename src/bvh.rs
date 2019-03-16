@@ -1,16 +1,16 @@
 
 use hitable::*;
-use std::rc::Rc;
 use math::*;
+use std::sync::Arc;
 
 pub struct BvhNode {
-    left: Rc<Hitable>,
-    right: Rc<Hitable>,
+    left: Arc<Hitable + Send + Sync + 'static>,
+    right: Arc<Hitable + Send + Sync + 'static>,
     bounding_box: AABB    
 }
 
 impl BvhNode {
-    pub fn from_list(list: Vec<Rc<Hitable>>, time0: f64, time1: f64) -> BvhNode {
+    pub fn from_list(list: Vec<Arc<Hitable + Send + Sync + 'static>>, time0: f64, time1: f64) -> BvhNode {
 
         let axis = (random::rand() * 3.0).floor() as u32; // SS: Choose random axis for simplicity
 
@@ -45,16 +45,16 @@ impl BvhNode {
 
         let list_length = local_list.len();
         if list_length == 1 {
-            left = Rc::clone(&local_list[0]);
-            right =  Rc::clone(&left);
+            left = Arc::clone(&local_list[0]);
+            right =  Arc::clone(&left);
         } else if list_length == 2 {
-            left =  Rc::clone(&local_list[0]);
-            right =  Rc::clone(&local_list[1]);
+            left =  Arc::clone(&local_list[0]);
+            right =  Arc::clone(&local_list[1]);
         } else {
             let half = list_length / 2;
             let second_half = local_list.split_off(half);
-            left = Rc::new(BvhNode::from_list(local_list, time0, time1));
-            right = Rc::new(BvhNode::from_list(second_half, time0, time1));
+            left = Arc::new(BvhNode::from_list(local_list, time0, time1));
+            right = Arc::new(BvhNode::from_list(second_half, time0, time1));
         }
 
         let box_left = left.bounding_box(time0, time1);

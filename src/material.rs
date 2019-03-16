@@ -1,7 +1,7 @@
 use math::*;
 use hitable::HitRecord;
 use texture::Texture;
-use std::rc::Rc;
+use std::sync::Arc;
 
 fn random_in_unit_sphere() -> Vec3 {
     let mut p: Vec3;
@@ -123,11 +123,11 @@ impl Material for Metal{
 }
 
 pub struct Lambertian {
-    albedo: Rc<Texture>
+    albedo: Arc<Texture + Send + Sync + 'static>
 }
 
 impl Lambertian {
-    pub fn new(albedo: Rc<Texture>) -> Lambertian {
+    pub fn new(albedo: Arc<Texture + Send + Sync + 'static>) -> Lambertian {
         Lambertian {
             albedo
         }

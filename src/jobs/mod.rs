@@ -5,23 +5,24 @@ use std::collections::VecDeque;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref JOB_SYSTEM: Jobs = Jobs { thread_pool: ThreadPool::new() };
+    static ref THREAD_POOL: ThreadPool = ThreadPool::new();
 }
 
-pub struct Jobs {
-    thread_pool: ThreadPool,
-}
+pub struct Jobs {}
 
 #[allow(dead_code)]
 impl Jobs {
-    pub fn push_job(job_task: Box<JobTask + Send + Sync + 'static>) {
-        let new_job = JobDescriptor::new(job_task);
-        JOB_SYSTEM.thread_pool.job_queue.push(new_job);
+    pub fn dispatch_job(job_task: JobDescriptor) {
+        THREAD_POOL.job_queue.push(job_task);
+    }
+
+    pub fn dispatch_jobs(job_tasks: Vec<JobDescriptor>) {
+        THREAD_POOL.job_queue.push_array(job_tasks);
     }
 
     pub fn wait_for_outstanding_jobs() {
         let fence = Fence::new();
-        Jobs::push_job(Box::new(FenceJob::new(fence.clone())));
+        Jobs::dispatch_job(JobDescriptor::new(Box::new(FenceJob::new(fence.clone()))));
         fence.wait();
     }
 }
@@ -113,12 +114,12 @@ impl Drop for ThreadPool {
     }
 }
 
-struct JobDescriptor{
+pub struct JobDescriptor{
     job: Box<JobTask + Send + Sync + 'static>,
 }
 
 impl JobDescriptor {
-    fn new(job: Box<JobTask + Send + Sync + 'static>) -> JobDescriptor {
+    pub fn new(job: Box<JobTask + Send + Sync + 'static>) -> JobDescriptor {
         JobDescriptor {
             job: job
         }
@@ -145,6 +146,13 @@ impl JobQueue {
     fn push(&self, descriptor: JobDescriptor) {
         let mut queue = self.queue.write().unwrap();
         queue.push_back(descriptor);
+    }
+
+    fn push_array(&self, descriptor_array: Vec<JobDescriptor>) {
+        let mut queue = self.queue.write().unwrap();
+        for descriptor in descriptor_array {
+            queue.push_back(descriptor);
+        }
     }
 
     fn pop(&self) -> Option<JobDescriptor> {
@@ -228,31 +236,29 @@ impl JobThread {
 mod tests {
     use super::*;
 
-    pub struct PrintJob {
-        value: String,
+    pub struct PrintJob1 {
+        value: String
     }
 
-    impl JobTask for PrintJob {
+    impl JobTask for PrintJob1 {
         fn run(&self) {
             println!("{}", self.value);
         }
     }
-
-
     #[test]
     fn test() {
 
         for i in 0..40 {
-            let job = PrintJob{value: format!("1st job batch: index {}", i)};
-            Jobs::push_job(Box::new(job));
+            let job = PrintJob1{value: format!("1st job batch: index {}", i)};
+            Jobs::dispatch_job(JobDescriptor::new(Box::new(job)));
         }
         Jobs::wait_for_outstanding_jobs();
 
         println!("Next set of jobs incoming..");
 
         for i in 0..40 {
-            let job = PrintJob{value: format!("2nd job batch: index {}", i)};
-            Jobs::push_job(Box::new(job));
+            let job = PrintJob1{value: format!("2nd job batch: index {}", i)};
+            Jobs::dispatch_job(JobDescriptor::new(Box::new(job)));
         }
         Jobs::wait_for_outstanding_jobs();
     }

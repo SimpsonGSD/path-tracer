@@ -1,16 +1,16 @@
 use math::*;
 use material::Material;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct HitRecord {
     pub t: f64,
     pub p: Vec3,
     pub normal: Vec3,
-    pub mat: Rc<Material>
+    pub mat: Arc<Material + Send + Sync + 'static>
 }
 
 impl HitRecord {
-    pub fn new(t: f64, p: Vec3, normal: Vec3, mat: Rc<Material>) -> HitRecord {
+    pub fn new(t: f64, p: Vec3, normal: Vec3, mat: Arc<Material + Send + Sync + 'static>) -> HitRecord {
         HitRecord {
             t,
             p,
@@ -26,11 +26,11 @@ pub trait Hitable {
 }
 
 pub struct HitableList {
-    list: Vec<Rc<Hitable>>
+    list: Vec<Arc<Hitable + Send + Sync + 'static>>
 }
 
 impl HitableList {
-    pub fn new(list: Vec<Rc<Hitable>>) -> HitableList {
+    pub fn new(list: Vec<Arc<Hitable + Send + Sync + 'static>>) -> HitableList {
         HitableList { list }
     }
 }

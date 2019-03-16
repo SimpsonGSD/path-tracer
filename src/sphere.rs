@@ -1,16 +1,16 @@
 use math::*;
 use material::Material;
 use hitable::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct Sphere {
     center: Vec3,
     radius: f64,
-    material: Rc<Material>,
+    material: Arc<Material + Send + Sync + 'static>,
 }
 
 impl Sphere {
-    pub fn new(center: Vec3, radius: f64, material: Rc<Material>) -> Sphere {
+    pub fn new(center: Vec3, radius: f64, material: Arc<Material + Send + Sync + 'static>) -> Sphere {
         Sphere {
             center,
             radius,
@@ -36,7 +36,7 @@ impl Hitable for Sphere {
                     temp,
                     point.clone(),
                     (point - &self.center) / self.radius,
-                    Rc::clone(&self.material))
+                    Arc::clone(&self.material))
                 );
             }
 
@@ -47,7 +47,7 @@ impl Hitable for Sphere {
                     temp,
                     point.clone(),
                     (point - &self.center) / self.radius,
-                    Rc::clone(&self.material))
+                    Arc::clone(&self.material))
                 );
             }
         } 

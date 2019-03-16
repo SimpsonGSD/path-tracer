@@ -40,10 +40,9 @@ use camera::Camera;
 use texture::ConstantTexture;
 use material::*;
 use sphere::Sphere;
-use std::rc::Rc;
 use bvh::BvhNode;
 use trace::*;
-use jobs::Jobs;
+use jobs::{Jobs, JobTask, JobDescriptor};
 
 // For tracking multithreading bugs
 const RUN_SINGLE_THREADED: bool = false;
@@ -52,7 +51,7 @@ pub fn run() {
 
     let nx: u32 = 1280;
     let ny: u32 = 720;
-    let ns: u32 = 1; // number of samples
+    let ns: u32 = 100; // number of samples
     let image_size = (nx,ny);
 
     let window_width = nx as f64;
@@ -68,6 +67,7 @@ pub fn run() {
     update_window_title_status(&window, &format!("Starting.. image size ({} x {})", nx, ny));
 
     //let world = two_spheres();
+    let world = four_spheres();
 
     //let lookfrom = Vec3::new(13.0,2.0,3.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
@@ -85,7 +85,7 @@ pub fn run() {
     let num_cores = num_cpus::get();
     println!("Running on {} cores", num_cores);
 
-    let num_tasks_xy = (4, 3);
+    let num_tasks_xy = (8, 6);
     // sanitize so num tasks divides exactly into image
     let num_tasks_xy = (round_down_to_closest_factor(num_tasks_xy.0, nx), round_down_to_closest_factor(num_tasks_xy.1, ny));
     let task_dim_xy = (nx / num_tasks_xy.0, ny / num_tasks_xy.1);
@@ -96,25 +96,30 @@ pub fn run() {
 
     let run_single_threaded = RUN_SINGLE_THREADED;
     if !run_single_threaded {
-        let mut handles = vec![];
+        let mut batches = vec![];
         for task_y in 0..num_tasks_xy.1 {
             for task_x in 0..num_tasks_xy.0 {
                 let window_lock = Arc::clone(&window_lock);
-                let cam = Arc::clone(&cam);
-                let window = Arc::clone(&window);
-                let image_buffer = Arc::clone(&bgr_texture);
-                let remaining_tasks = Arc::clone(&remaining_tasks);
+                let cam = cam.clone();
+                let world = world.clone();
+                let window = window.clone();
+                let image_buffer = bgr_texture.clone();
+                let remaining_tasks = remaining_tasks.clone();
 
-                let handle = thread::spawn( move || {
-                    let world = four_spheres();
-                    let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
-                    let end_xy = (start_xy.0 + task_dim_xy.0, start_xy.1 + task_dim_xy.1);
-                    trace_scene_mt(&cam, &world, ns, start_xy, end_xy, image_buffer, image_size, remaining_tasks, window_lock, &window);
-                });
-
-                handles.push(handle);
+                let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
+                let end_xy = (start_xy.0 + task_dim_xy.0, start_xy.1 + task_dim_xy.1);
+                let batch = TraceSceneBatchJob::new(cam, 
+                                                    world, 
+                                                    ns, 
+                                                    start_xy, end_xy, 
+                                                    image_buffer, image_size, 
+                                                    remaining_tasks, 
+                                                    window_lock, window);
+                batches.push(JobDescriptor::new(Box::new(batch)));
             }
         }
+
+        Jobs::dispatch_jobs(batches);
 
         loop {
             // Poll message loop while we trace so we can early-exit
@@ -148,7 +153,19 @@ pub fn run() {
         let start_xy = (0, 0);
         let end_xy = image_size;
         let image_buffer = Arc::clone(&bgr_texture);
-        trace_scene_mt(&cam, &world, ns, start_xy, end_xy, image_buffer, image_size, remaining_tasks, window_lock, &window);
+        let cam = cam.clone();
+        let world = world.clone();
+        let window = window.clone();
+        let remaining_tasks = remaining_tasks.clone();
+        let batch = TraceSceneBatchJob::new(cam, 
+                                    world, 
+                                    ns, 
+                                    start_xy, end_xy, 
+                                    image_buffer, image_size, 
+                                    remaining_tasks, 
+                                    window_lock, window);
+        batch.run();
+        //trace_scene_mt(&cam, &world, ns, start_xy, end_xy, image_buffer, image_size, remaining_tasks, window_lock, &window);
     }
 
     // stats
@@ -221,37 +238,37 @@ fn save_bgr_texture_as_ppm(filename: &str, bgr_buffer: &Vec<u8>, buffer_size: (u
 }
 
 #[allow(dead_code)]
-fn two_spheres() -> Box<Hitable> {
-    let red_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(1.0, 0.0, 0.0)))));
-    let blue_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 0.0, 1.0)))));
+fn two_spheres() -> Box<Hitable + Send + Sync + 'static> {
+    let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(1.0, 0.0, 0.0)))));
+    let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.0, 1.0)))));
 
-    let list: Vec<Rc<dyn Hitable>> = vec![
-        Rc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
-        Rc::new(Sphere::new(Vec3::new(0.0,  10.0, 0.0), 10.0, blue_material)),
+    let list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![
+        Arc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
+        Arc::new(Sphere::new(Vec3::new(0.0,  10.0, 0.0), 10.0, blue_material)),
     ];
 
     Box::new(HitableList::new(list))
 }
 
-fn four_spheres() -> Box<Hitable> {
-    let red_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.9, 0.0, 0.0)))));
-    let blue_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 0.1, 0.8)))));
-    let green_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.0, 0.9, 0.0)))));
-    let yellow_material = Rc::new(Lambertian::new(Rc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.0)))));
+fn four_spheres() -> Arc<Hitable + Send + Sync + 'static> {
+    let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.0, 0.0)))));
+    let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.1, 0.8)))));
+    let green_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.9, 0.0)))));
+    let yellow_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.0)))));
 
-    let dielectric_material = Rc::new(Dielectric::new(1.2));
-    let metal_material = Rc::new(Metal::new(Vec3::from_float(0.9), 0.5));
+    let dielectric_material = Arc::new(Dielectric::new(1.2));
+    let metal_material = Arc::new(Metal::new(Vec3::from_float(0.9), 0.5));
 
-    let list: Vec<Rc<Hitable>> = vec![
-        Rc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
-        Rc::new(Sphere::new(Vec3::new(0.0,  -100.5, -1.0), 100.0, blue_material)),
-        Rc::new(Sphere::new(Vec3::new(1.0,  0.0, -1.0), 0.5, green_material)),
-        Rc::new(Sphere::new(Vec3::new(-1.0,  0.0, -1.0), 0.5, yellow_material)),
-        Rc::new(Sphere::new(Vec3::new(-2.0,  0.0, -1.0), 0.5, dielectric_material)),
-        Rc::new(Sphere::new(Vec3::new(2.0,  0.0, -1.0), 0.5, metal_material)),
+    let list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![
+        Arc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
+        Arc::new(Sphere::new(Vec3::new(0.0,  -100.5, -1.0), 100.0, blue_material)),
+        Arc::new(Sphere::new(Vec3::new(1.0,  0.0, -1.0), 0.5, green_material)),
+        Arc::new(Sphere::new(Vec3::new(-1.0,  0.0, -1.0), 0.5, yellow_material)),
+        Arc::new(Sphere::new(Vec3::new(-2.0,  0.0, -1.0), 0.5, dielectric_material)),
+        Arc::new(Sphere::new(Vec3::new(2.0,  0.0, -1.0), 0.5, metal_material)),
     ];
 
-    Box::new(BvhNode::from_list(list, 0.0, 1.0))
+    Arc::new(BvhNode::from_list(list, 0.0, 1.0))
     //Box::new(HitableList::new(list))
 }
 
