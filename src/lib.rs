@@ -17,6 +17,7 @@ use winit::dpi::LogicalSize;
 use winit_utils::*;
 
 extern crate num_cpus;
+extern crate lazy_static;
 
 //extern crate rayon;
 //use rayon::prelude::*;
@@ -42,20 +43,10 @@ use sphere::Sphere;
 use std::rc::Rc;
 use bvh::BvhNode;
 use trace::*;
-use jobs::*;
+use jobs::Jobs;
 
 // For tracking multithreading bugs
 const RUN_SINGLE_THREADED: bool = false;
-
-struct PrintJob {
-    value: String,
-}
-
-impl JobTask for PrintJob {
-    fn run(&self) {
-        println!("{}", self.value);
-    }
-}
 
 pub fn run() {
 
@@ -102,16 +93,6 @@ pub fn run() {
     let remaining_tasks = Arc::new(AtomicUsize::new((num_tasks_xy.0*num_tasks_xy.1) as usize));
 
     update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks_xy.0 * num_tasks_xy.1));
-
-    let job_system = Jobs::new();
-    for i in 0..40 {
-        job_system.push(Box::new(PrintJob{value: format!("job {}", i)}));
-    }
-
-    // TODO(SS): thread_pool.wait_for_jobs();
-    thread::sleep(Duration::from_secs(10));
-
-    return;
 
     let run_single_threaded = RUN_SINGLE_THREADED;
     if !run_single_threaded {

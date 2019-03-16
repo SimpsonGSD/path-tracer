@@ -1,41 +1,88 @@
 use std::thread;
 use std::thread::JoinHandle;
-use std::time::Duration;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Condvar, Mutex};
 use std::collections::VecDeque;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref JOB_SYSTEM: Jobs = Jobs { thread_pool: ThreadPool::new() };
+}
 
 pub struct Jobs {
     thread_pool: ThreadPool,
+}
+
+#[allow(dead_code)]
+impl Jobs {
+    pub fn push_job(job_task: Box<JobTask + Send + Sync + 'static>) {
+        let new_job = JobDescriptor::new(job_task);
+        JOB_SYSTEM.thread_pool.job_queue.push(new_job);
+    }
+
+    pub fn wait_for_outstanding_jobs() {
+        let fence = Fence::new();
+        Jobs::push_job(Box::new(FenceJob::new(fence.clone())));
+        fence.wait();
+    }
 }
 
 pub trait JobTask {
     fn run(&self);
 }
 
-impl Jobs {
-    pub fn new() -> Jobs {
-        Jobs {
-            thread_pool: ThreadPool::new()
+#[derive(Clone)]
+struct Fence {
+    value: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl Fence {
+    fn new() -> Fence {
+        Fence {
+            value: Arc::new((Mutex::new(false), Condvar::new()))
         }
     }
 
-    pub fn push(&self, job_task: Box<JobTask + Send + Sync + 'static>) {
-        let job_descriptor = JobDescriptor::new(job_task);
-        self.thread_pool.job_queue.push(job_descriptor);
+    fn notify(&self) {
+        let &(ref lock, ref condvar) = &*self.value;
+        let mut notified = lock.lock().unwrap();
+        *notified = true;
+        condvar.notify_one();
     }
 
-    pub fn wait_for_jobs(&self) {
-        // TODO(SS) insert job and wait for completion
+    fn wait(&self) {
+        let &(ref lock, ref condvar) = &*self.value;
+        let mut notified = lock.lock().unwrap();
+        // wait for notifcation
+        while !*notified {
+            // this allows the thread to sleep and not use cycles, however it may wake up spuriously so that is why we also check "notified"
+            notified = condvar.wait(notified).unwrap();
+        }
     }
 }
 
-#[allow(dead_code)]
+struct FenceJob {
+    fence: Fence,
+}
+
+impl FenceJob {
+    fn new(fence: Fence) -> FenceJob {
+        FenceJob {
+            fence
+        }
+    }
+}
+
+impl JobTask for FenceJob {
+    fn run(&self) {
+        self.fence.notify();
+    }
+}
+
 struct ThreadPool {
     job_threads: Vec<JobThreadHandle>,
     job_queue: JobQueue,
 }
 
-#[allow(dead_code)]
 impl ThreadPool {
     pub fn new() -> ThreadPool {
         let num_cores = num_cpus::get();
@@ -52,15 +99,12 @@ impl ThreadPool {
             job_queue,
         }
     }
-    // TODO(SS): Call on drop 
     fn destroy(&mut self) {
         // stop each thread before waiting for them all to join
         self.job_threads.iter().for_each(|thread| thread.stop());
         // drain all threads and wait for them to join
         self.job_threads.drain(..).for_each( move |thread| thread.join());
     }
-
-
 }
 
 impl Drop for ThreadPool {
@@ -171,8 +215,7 @@ impl JobThread {
                     job_descriptor.run();
                 },
                 None => {
-                    // TODO(SS): Wake on event
-                    thread::sleep(Duration::from_secs(1))
+                    // TODO(SS): Spin for a bit then got to sleep on a condvar
                 },
             };
         }
@@ -185,17 +228,32 @@ impl JobThread {
 mod tests {
     use super::*;
 
+    pub struct PrintJob {
+        value: String,
+    }
+
+    impl JobTask for PrintJob {
+        fn run(&self) {
+            println!("{}", self.value);
+        }
+    }
+
+
     #[test]
     fn test() {
 
-        let jobs = Jobs::new();
+        for i in 0..40 {
+            let job = PrintJob{value: format!("1st job batch: index {}", i)};
+            Jobs::push_job(Box::new(job));
+        }
+        Jobs::wait_for_outstanding_jobs();
+
+        println!("Next set of jobs incoming..");
 
         for i in 0..40 {
-
-           // jobs.run(JobDescriptor{value: format!("job {}", i)});
+            let job = PrintJob{value: format!("2nd job batch: index {}", i)};
+            Jobs::push_job(Box::new(job));
         }
-
-        // TODO(SS): thread_pool.wait_for_jobs();
-        thread::sleep(Duration::from_secs(10));
+        Jobs::wait_for_outstanding_jobs();
     }
 }
