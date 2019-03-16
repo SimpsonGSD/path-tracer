@@ -47,6 +47,16 @@ use jobs::*;
 // For tracking multithreading bugs
 const RUN_SINGLE_THREADED: bool = false;
 
+struct PrintJob {
+    value: String,
+}
+
+impl JobTask for PrintJob {
+    fn run(&self) {
+        println!("{}", self.value);
+    }
+}
+
 pub fn run() {
 
     let nx: u32 = 1280;
@@ -95,7 +105,7 @@ pub fn run() {
 
     let job_system = Jobs::new();
     for i in 0..40 {
-        job_system.run(JobDescriptor{value: format!("job {}", i)});
+        job_system.push(Box::new(PrintJob{value: format!("job {}", i)}));
     }
 
     // TODO(SS): thread_pool.wait_for_jobs();

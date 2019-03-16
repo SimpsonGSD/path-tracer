@@ -1,11 +1,15 @@
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Mutex};
 use std::collections::VecDeque;
 
 pub struct Jobs {
     thread_pool: ThreadPool,
+}
+
+pub trait JobTask {
+    fn run(&self);
 }
 
 impl Jobs {
@@ -15,7 +19,8 @@ impl Jobs {
         }
     }
 
-    pub fn run(&self, job_descriptor: JobDescriptor) {
+    pub fn push(&self, job_task: Box<JobTask + Send + Sync + 'static>) {
+        let job_descriptor = JobDescriptor::new(job_task);
         self.thread_pool.job_queue.push(job_descriptor);
     }
 
@@ -64,8 +69,20 @@ impl Drop for ThreadPool {
     }
 }
 
-pub struct JobDescriptor {
-    pub value: String,
+struct JobDescriptor{
+    job: Box<JobTask + Send + Sync + 'static>,
+}
+
+impl JobDescriptor {
+    fn new(job: Box<JobTask + Send + Sync + 'static>) -> JobDescriptor {
+        JobDescriptor {
+            job: job
+        }
+    }
+
+    fn run(self) {
+        self.job.run();
+    }
 }
 
 #[derive(Clone)]
@@ -93,10 +110,14 @@ impl JobQueue {
 
     // low contention - will return false if queue is already locked for write
     fn is_empty(&self) -> bool {
-        return match self.queue.try_read() {
-            Ok(queue) => queue.is_empty(),
-            Err(_) => false,
-        };
+        match self.queue.try_read() {
+            Ok(queue) => {
+                queue.is_empty()
+            },
+            Err(_) => {
+                false
+            },
+        } 
     }
 }
 
@@ -147,7 +168,7 @@ impl JobThread {
         while *self.is_running.read().unwrap() {
             match self.queue.pop() {
                 Some(job_descriptor) => {
-                    println!("thread {}: Running job {}", self.thread_pool_index, job_descriptor.value );
+                    job_descriptor.run();
                 },
                 None => {
                     // TODO(SS): Wake on event
@@ -171,7 +192,7 @@ mod tests {
 
         for i in 0..40 {
 
-            jobs.run(JobDescriptor{value: format!("job {}", i)});
+           // jobs.run(JobDescriptor{value: format!("job {}", i)});
         }
 
         // TODO(SS): thread_pool.wait_for_jobs();
