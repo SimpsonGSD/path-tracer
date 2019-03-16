@@ -1,12 +1,14 @@
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use std::sync::{Arc, RwLock, Mutex};
+use std::sync::{Arc, RwLock};
 
+#[allow(dead_code)]
 pub struct ThreadPool {
     job_threads: Vec<JobThreadHandle>,
 }
 
+#[allow(dead_code)]
 impl ThreadPool {
     pub fn new() -> ThreadPool {
         let num_cores = num_cpus::get();
@@ -30,6 +32,7 @@ impl ThreadPool {
     }
 }
 
+#[allow(dead_code)]
 struct JobThreadHandle {
     is_running: Arc<RwLock<bool>>,
     thread_handle: JoinHandle<()>,
