@@ -1,7 +1,7 @@
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use std::sync::{Arc, RwLock, Mutex};
+use std::sync::{Arc, RwLock};
 use std::collections::VecDeque;
 
 pub struct Jobs {
