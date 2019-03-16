@@ -42,6 +42,7 @@ use sphere::Sphere;
 use std::rc::Rc;
 use bvh::BvhNode;
 use trace::*;
+use jobs::*;
 
 // For tracking multithreading bugs
 const RUN_SINGLE_THREADED: bool = false;
@@ -92,7 +93,15 @@ pub fn run() {
 
     update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks_xy.0 * num_tasks_xy.1));
 
-    //let thread_pool = jobs::ThreadPool::new();
+    let job_system = Jobs::new();
+    for i in 0..40 {
+        job_system.run(JobDescriptor{value: format!("job {}", i)});
+    }
+
+    // TODO(SS): thread_pool.wait_for_jobs();
+    thread::sleep(Duration::from_secs(10));
+
+    return;
 
     let run_single_threaded = RUN_SINGLE_THREADED;
     if !run_single_threaded {
