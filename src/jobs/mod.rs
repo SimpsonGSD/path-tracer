@@ -20,6 +20,7 @@ impl Jobs {
         THREAD_POOL.push_job_array(&job_tasks);
     }
 
+    // !!! TODO(SS): THIS ONLY FENCES ONE THREAD - NEEDS FIXING SO ALL THREADS SYNC !!!
     pub fn wait_for_outstanding_jobs() {
         let fence = Fence::new();
         Jobs::dispatch_job(JobDescriptor::new(Arc::new(FenceJob::new(fence.clone()))));

@@ -79,11 +79,6 @@ impl Camera {
         self.lower_left_corner = self.calc_lower_left_corner();
     }
 
-    pub fn rotate_right(&mut self, delta: f64) {
-        //let radius = (&self.origin - &self.lookat).length();
-        //self.lookat.x += delta.sin() * radius;
-    }
-
     pub fn get_look_at(&self) -> Vec3 {
         self.look_at.clone()
     }

@@ -77,22 +77,24 @@ impl Hitable for BvhNode {
         if self.bounding_box.hit(ray, t_min, t_max) {
 
             let left_hit = self.left.hit(ray, t_min, t_max);
-            let right_hit = self.right.hit(ray, t_min, t_max);
+            //let right_hit = self.right.hit(ray, t_min, t_max);
 
-            // if both hits succeed return smallest time t, closet one. Else return the other one hit or none if no hit
             record = match left_hit {
-                Some(left_hit_u) => match right_hit {
-                    Some(right_hit_u) => if left_hit_u.t < right_hit_u.t { 
-                        Some(left_hit_u)
-                    } else {
-                        Some(right_hit_u)
-                    },
-                    None => Some(left_hit_u)
+                // if left hit, try right hit with t_max as left_hit.t as no point testing hits beyond this point
+                Some(left_hit_u) => {
+                    let right_hit = self.right.hit(ray, t_min, left_hit_u.t);
+                    match right_hit {
+                        Some(right_hit_u) => Some(right_hit_u),
+                        None => Some(left_hit_u),
+                    }
                 },
-                None => match right_hit {
-                    Some(right_hit_u) => Some(right_hit_u),
-                    None => None
-                },
+                None => {
+                    let right_hit = self.right.hit(ray, t_min, t_max);
+                    match right_hit {
+                        Some(right_hit_u) => Some(right_hit_u),
+                        None => None,
+                    }
+                }
             }
         } 
         
