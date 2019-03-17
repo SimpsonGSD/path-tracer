@@ -14,6 +14,7 @@ type ThreadsafeCounter = Arc<AtomicUsize>;
 
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
+const ENABLE_RENDER: bool = true;
 
 pub struct TraceSceneBatchJob {
     cam: Arc<Camera>,
@@ -104,15 +105,17 @@ impl TraceSceneBatchJob {
                 dest_buffer.copy_from_slice(src_buffer);
             } // buffer_mutex is released here 
 
-            if j % RENDER_UPDATE_LATENCY == 0 && self.window_lock.compare_and_swap(false, true, Ordering::Acquire)  {
+            if ENABLE_RENDER && j % RENDER_UPDATE_LATENCY == 0 && self.window_lock.compare_and_swap(false, true, Ordering::Acquire)  {
                 // Update frame buffer to show progress
                 update_window_and_release_lock(&mut local_buffer);
             }
         }
 
-        while self.window_lock.compare_and_swap(false, true, Ordering::Acquire)  {
-            // Update frame buffer to show progress
-            update_window_and_release_lock(&mut local_buffer);
+        if ENABLE_RENDER {
+            while self.window_lock.compare_and_swap(false, true, Ordering::Acquire)  {
+                // Update frame buffer to show progress
+                update_window_and_release_lock(&mut local_buffer);
+            }
         }
 
         // notify completion by decrementing task counter

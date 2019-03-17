@@ -51,7 +51,7 @@ pub fn run() {
 
     let nx: u32 = 1280;
     let ny: u32 = 720;
-    let ns: u32 = 100; // number of samples
+    let ns: u32 = 50; // number of samples
     let image_size = (nx,ny);
 
     let window_width = nx as f64;
@@ -69,14 +69,14 @@ pub fn run() {
     //let world = two_spheres();
     let world = four_spheres();
 
-    //let lookfrom = Vec3::new(13.0,2.0,3.0);
+    let lookfrom = Vec3::new(13.0,2.0,3.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
-    let lookfrom = Vec3::new(-2.0,2.0,1.0);
+    //let lookfrom = Vec3::new(-2.0,2.0,1.0);
     let lookat = Vec3::new(0.0,0.0,-1.0);
     let dist_to_focus = 10.0;
     let aperture = 0.1;
     let aspect: f64 = (nx as f64)/(ny as f64);
-    let cam = Arc::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 90.0, aspect, aperture, dist_to_focus, 0.0, 1.0));
+    let cam = Arc::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0));
 
     let buffer_size_bytes = (nx*ny*3) as usize;
     let bgr_texture = Arc::new(Mutex::new(vec![0_u8; buffer_size_bytes]));
@@ -85,88 +85,91 @@ pub fn run() {
     let num_cores = num_cpus::get();
     println!("Running on {} cores", num_cores);
 
-    let num_tasks_xy = (8, 6);
+    let task_dim_xy = (120, 120);
     // sanitize so num tasks divides exactly into image
-    let num_tasks_xy = (round_down_to_closest_factor(num_tasks_xy.0, nx), round_down_to_closest_factor(num_tasks_xy.1, ny));
-    let task_dim_xy = (nx / num_tasks_xy.0, ny / num_tasks_xy.1);
+    let task_dim_xy = (round_down_to_closest_factor(task_dim_xy.0, nx), round_down_to_closest_factor(task_dim_xy.1, ny));
+    let num_tasks_xy = (nx / task_dim_xy.0, ny / task_dim_xy.1);
     let window_lock = Arc::new(AtomicBool::new(false));
     let remaining_tasks = Arc::new(AtomicUsize::new((num_tasks_xy.0*num_tasks_xy.1) as usize));
 
     update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks_xy.0 * num_tasks_xy.1));
 
-    let run_single_threaded = RUN_SINGLE_THREADED;
-    if !run_single_threaded {
-        let mut batches = vec![];
-        for task_y in 0..num_tasks_xy.1 {
-            for task_x in 0..num_tasks_xy.0 {
-                let window_lock = Arc::clone(&window_lock);
-                let cam = cam.clone();
-                let world = world.clone();
-                let window = window.clone();
-                let image_buffer = bgr_texture.clone();
-                let remaining_tasks = remaining_tasks.clone();
+    let trace_scene = |events_loop: &mut winit::EventsLoop| {
+        let run_single_threaded = RUN_SINGLE_THREADED;
+        if !run_single_threaded {
+            let mut batches = vec![];
+            for task_y in 0..num_tasks_xy.1 {
+                for task_x in 0..num_tasks_xy.0 {
+                    let window_lock = Arc::clone(&window_lock);
+                    let cam = cam.clone();
+                    let world = world.clone();
+                    let window = window.clone();
+                    let image_buffer = bgr_texture.clone();
+                    let remaining_tasks = remaining_tasks.clone();
 
-                let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
-                let end_xy = (start_xy.0 + task_dim_xy.0, start_xy.1 + task_dim_xy.1);
-                let batch = TraceSceneBatchJob::new(cam, 
-                                                    world, 
-                                                    ns, 
-                                                    start_xy, end_xy, 
-                                                    image_buffer, image_size, 
-                                                    remaining_tasks, 
-                                                    window_lock, window);
-                batches.push(JobDescriptor::new(Box::new(batch)));
-            }
-        }
-
-        Jobs::dispatch_jobs(batches);
-
-        loop {
-            // Poll message loop while we trace so we can early-exit
-            events_loop.poll_events(|event| {
-                use winit::VirtualKeyCode;
-                match event {
-                    Event::WindowEvent { event, .. } => match event {
-                        WindowEvent::KeyboardInput { input, .. } => {
-                            if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
-                                std::process::exit(0);
-                            }
-                        }
-                        WindowEvent::CloseRequested => std::process::exit(0),
-                        _ => {},
-                    },
-                    _ => {},
+                    let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
+                    let end_xy = (start_xy.0 + task_dim_xy.0, start_xy.1 + task_dim_xy.1);
+                    let batch = TraceSceneBatchJob::new(cam, 
+                                                        world, 
+                                                        ns, 
+                                                        start_xy, end_xy, 
+                                                        image_buffer, image_size, 
+                                                        remaining_tasks, 
+                                                        window_lock, window);
+                    batches.push(JobDescriptor::new(Box::new(batch)));
                 }
-            });
-
-            // wait for threads to finish by checking atomic ref count on the shared image buffer
-            // Note(SS): Could use condvars here but then wouldn't be able to poll the message queue
-            if remaining_tasks.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
-                break;
             }
 
-            // yield thread
-            thread::sleep(Duration::from_secs(1));
+            Jobs::dispatch_jobs(batches);
+
+            loop {
+                // Poll message loop while we trace so we can early-exit
+                events_loop.poll_events(|event| {
+                    use winit::VirtualKeyCode;
+                    match event {
+                        Event::WindowEvent { event, .. } => match event {
+                            WindowEvent::KeyboardInput { input, .. } => {
+                                if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
+                                    std::process::exit(0);
+                                }
+                            }
+                            WindowEvent::CloseRequested => std::process::exit(0),
+                            _ => {},
+                        },
+                        _ => {},
+                    }
+                });
+
+                // wait for threads to finish by checking atomic ref count on the shared image buffer
+                // Note(SS): Could use condvars here but then wouldn't be able to poll the message queue
+                if remaining_tasks.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
+                    break;
+                }
+
+                // yield thread
+                thread::sleep(Duration::from_secs(1));
+            }
+        } else {
+            let world = four_spheres();
+            let start_xy = (0, 0);
+            let end_xy = image_size;
+            let image_buffer = Arc::clone(&bgr_texture);
+            let cam = cam.clone();
+            let world = world.clone();
+            let window = window.clone();
+            let remaining_tasks = remaining_tasks.clone();
+            let batch = TraceSceneBatchJob::new(cam, 
+                                        world, 
+                                        ns, 
+                                        start_xy, end_xy, 
+                                        image_buffer, image_size, 
+                                        remaining_tasks, 
+                                        window_lock, window);
+            batch.run();
         }
-    } else {
-        let world = four_spheres();
-        let start_xy = (0, 0);
-        let end_xy = image_size;
-        let image_buffer = Arc::clone(&bgr_texture);
-        let cam = cam.clone();
-        let world = world.clone();
-        let window = window.clone();
-        let remaining_tasks = remaining_tasks.clone();
-        let batch = TraceSceneBatchJob::new(cam, 
-                                    world, 
-                                    ns, 
-                                    start_xy, end_xy, 
-                                    image_buffer, image_size, 
-                                    remaining_tasks, 
-                                    window_lock, window);
-        batch.run();
-        //trace_scene_mt(&cam, &world, ns, start_xy, end_xy, image_buffer, image_size, remaining_tasks, window_lock, &window);
-    }
+    };
+
+    trace_scene(&mut events_loop);
 
     // stats
     let duration = start_timer.elapsed();
