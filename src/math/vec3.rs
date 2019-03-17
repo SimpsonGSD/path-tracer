@@ -2,9 +2,9 @@ use std::ops;
 
 #[derive(Debug, Clone)]
 pub struct Vec3 {
-    x: f64,
-    y: f64,
-    z: f64
+    pub x: f64,
+    pub y: f64,
+    pub z: f64
 }
 
 impl Vec3 {
@@ -30,18 +30,6 @@ impl Vec3 {
 
     pub fn new_unit_vector(v: &Vec3) -> Vec3 {
         v.div_float(v.length())
-    }
-
-    pub fn x(&self) -> f64 {
-        self.x
-    }
-
-    pub fn y(&self) -> f64 {
-        self.y
-    }
-
-    pub fn z(&self) -> f64 {
-        self.z
     }
 
     pub fn r(&self) -> f64 {
@@ -142,14 +130,14 @@ impl Vec3 {
 
 pub fn cross(v1: &Vec3, v2: &Vec3) -> Vec3 {
     Vec3::new(
-            v1.y()*v2.z() - v1.z()*v2.y(),
-          -(v1.x()*v2.z() - v1.z()*v2.x()),
-            v1.x()*v2.y() - v1.y()*v2.x()
+            v1.y*v2.z - v1.z*v2.y,
+          -(v1.x*v2.z - v1.z*v2.x),
+            v1.x*v2.y - v1.y*v2.x
     )
 }
 
 pub fn dot(v1: &Vec3, v2: &Vec3) -> f64 {
-    v1.x()*v2.x() + v1.y()*v2.y() + v1.z()*v2.z()
+    v1.x*v2.x + v1.y*v2.y + v1.z*v2.z
 }
 
 impl ops::Index<usize> for Vec3 {

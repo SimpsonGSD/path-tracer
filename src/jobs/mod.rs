@@ -13,17 +13,21 @@ pub struct Jobs {}
 #[allow(dead_code)]
 impl Jobs {
     pub fn dispatch_job(job_task: JobDescriptor) {
-        THREAD_POOL.job_queue.push(job_task);
+        THREAD_POOL.push_job(job_task);
     }
 
-    pub fn dispatch_jobs(job_tasks: Vec<JobDescriptor>) {
-        THREAD_POOL.job_queue.push_array(job_tasks);
+    pub fn dispatch_jobs(job_tasks: &Vec<JobDescriptor>) {
+        THREAD_POOL.push_job_array(&job_tasks);
     }
 
     pub fn wait_for_outstanding_jobs() {
         let fence = Fence::new();
-        Jobs::dispatch_job(JobDescriptor::new(Box::new(FenceJob::new(fence.clone()))));
+        Jobs::dispatch_job(JobDescriptor::new(Arc::new(FenceJob::new(fence.clone()))));
         fence.wait();
+    }
+
+    pub fn job_queue_empty() -> bool {
+        THREAD_POOL.job_queue.is_empty()
     }
 }
 
@@ -82,24 +86,39 @@ impl JobTask for FenceJob {
 struct ThreadPool {
     job_threads: Vec<JobThreadHandle>,
     job_queue: JobQueue,
+    thread_wake_event: ThreadWakeEvent,
 }
 
 impl ThreadPool {
     pub fn new() -> ThreadPool {
-        let num_cores = num_cpus::get();
+        let num_cores = (num_cpus::get() - 1).max(1);
         println!("Thread pool: Spooling up {} threads", num_cores);
-        let mut job_threads = vec![];
+        
         let job_queue = JobQueue::new();
+        let thread_wake_event = ThreadWakeEvent::new();
+        let mut job_threads = vec![];
         for i in 0..num_cores {
-            let job_thread = JobThread::new(i, job_queue.clone());
+            let job_thread = JobThread::new(i, job_queue.clone(), thread_wake_event.clone());
             job_threads.push(job_thread);
         }
 
         ThreadPool {
             job_threads,
             job_queue,
+            thread_wake_event,
         }
     }
+
+    pub fn push_job(&self, job_task: JobDescriptor) {
+        self.job_queue.push(job_task);
+        self.thread_wake_event.wake_threads(); // notify threads to wake
+    }
+
+    pub fn push_job_array(&self, job_tasks: &Vec<JobDescriptor>) {
+        self.job_queue.push_array(&job_tasks);
+        self.thread_wake_event.wake_threads();  // notify threads to wake
+    }
+
     fn destroy(&mut self) {
         // stop each thread before waiting for them all to join
         self.job_threads.iter().for_each(|thread| thread.stop());
@@ -114,12 +133,13 @@ impl Drop for ThreadPool {
     }
 }
 
+#[derive(Clone)]
 pub struct JobDescriptor{
-    job: Box<JobTask + Send + Sync + 'static>,
+    job: Arc<JobTask + Send + Sync + 'static>,
 }
 
 impl JobDescriptor {
-    pub fn new(job: Box<JobTask + Send + Sync + 'static>) -> JobDescriptor {
+    pub fn new(job: Arc<JobTask + Send + Sync + 'static>) -> JobDescriptor {
         JobDescriptor {
             job: job
         }
@@ -148,10 +168,10 @@ impl JobQueue {
         queue.push_back(descriptor);
     }
 
-    fn push_array(&self, descriptor_array: Vec<JobDescriptor>) {
+    fn push_array(&self, descriptor_array: &Vec<JobDescriptor>) {
         let mut queue = self.queue.write().unwrap();
         for descriptor in descriptor_array {
-            queue.push_back(descriptor);
+            queue.push_back((*descriptor).clone());
         }
     }
 
@@ -160,16 +180,9 @@ impl JobQueue {
         queue.pop_front()
     }
 
-    // low contention - will return false if queue is already locked for write
     fn is_empty(&self) -> bool {
-        match self.queue.try_read() {
-            Ok(queue) => {
-                queue.is_empty()
-            },
-            Err(_) => {
-                false
-            },
-        } 
+        let queue = self.queue.read().unwrap();
+        queue.is_empty()
     }
 }
 
@@ -189,19 +202,47 @@ impl JobThreadHandle {
     }
 }
 
+#[derive(Clone)]
+struct ThreadWakeEvent {
+    value: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl ThreadWakeEvent {
+    fn new() -> ThreadWakeEvent {
+        ThreadWakeEvent {
+            value: Arc::new((Mutex::new(false), Condvar::new()))
+        }
+    }
+
+    fn wake_threads(&self) {
+        let &(ref lock, ref condvar) = &*self.value;
+        let mut wake = lock.lock().unwrap();
+        *wake = true;
+        condvar.notify_all();
+    }
+
+    fn sleep_thread(&self) {
+        let &(ref lock, ref condvar) = &*self.value;
+        // sleep on event, this may wake spuriously but we don't really care
+        let _unused = condvar.wait(lock.lock().unwrap()).unwrap();
+    }
+}
+
 struct JobThread {
     thread_pool_index: usize,
     is_running: Arc<RwLock<bool>>,
     queue: JobQueue,
+    wake_event: ThreadWakeEvent,
 }
 
 impl JobThread {
-    fn new(thread_pool_index: usize, queue: JobQueue) -> JobThreadHandle {
+    fn new(thread_pool_index: usize, queue: JobQueue, wake_event: ThreadWakeEvent) -> JobThreadHandle {
         let is_running = Arc::new(RwLock::new(true));
         let job_thread = JobThread {
             thread_pool_index,
             is_running: is_running.clone(),
-            queue
+            queue,
+            wake_event,
         };
 
         let thread_handle = thread::spawn( move || {
@@ -217,15 +258,24 @@ impl JobThread {
     fn run(&self) {
         println!("Job Thread {} started..", self.thread_pool_index);
         
+        const SPINS_BEFORE_SLEEP: i32 = 20;
+        let mut spins = 0;
         while *self.is_running.read().unwrap() {
             match self.queue.pop() {
                 Some(job_descriptor) => {
                     job_descriptor.run();
+                    spins = 0;
                 },
                 None => {
-                    // TODO(SS): Spin for a bit then got to sleep on a condvar
+                    spins += 1;
                 },
             };
+
+            // sleep if we've no work
+            if spins > SPINS_BEFORE_SLEEP {
+                self.wake_event.sleep_thread();
+            }
+
         }
         
         println!("Job Thread: {} stopped..", self.thread_pool_index);

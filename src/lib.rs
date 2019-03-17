@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::Write;
 use std::f64;
 use std::time::{Instant, Duration};
-use std::sync::{Mutex, Arc};
+use std::sync::{Mutex, Arc, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 
@@ -51,7 +51,7 @@ pub fn run() {
 
     let nx: u32 = 1280;
     let ny: u32 = 720;
-    let ns: u32 = 50; // number of samples
+    let ns: u32 = if REALTIME {1} else {100}; // number of samples
     let image_size = (nx,ny);
 
     let window_width = nx as f64;
@@ -76,7 +76,7 @@ pub fn run() {
     let dist_to_focus = 10.0;
     let aperture = 0.1;
     let aspect: f64 = (nx as f64)/(ny as f64);
-    let cam = Arc::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0));
+    let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
 
     let buffer_size_bytes = (nx*ny*3) as usize;
     let bgr_texture = Arc::new(Mutex::new(vec![0_u8; buffer_size_bytes]));
@@ -94,33 +94,25 @@ pub fn run() {
 
     update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks_xy.0 * num_tasks_xy.1));
 
-    let trace_scene = |events_loop: &mut winit::EventsLoop| {
-        let run_single_threaded = RUN_SINGLE_THREADED;
-        if !run_single_threaded {
+    if !REALTIME {
+        if !RUN_SINGLE_THREADED {
             let mut batches = vec![];
             for task_y in 0..num_tasks_xy.1 {
                 for task_x in 0..num_tasks_xy.0 {
-                    let window_lock = Arc::clone(&window_lock);
-                    let cam = cam.clone();
-                    let world = world.clone();
-                    let window = window.clone();
-                    let image_buffer = bgr_texture.clone();
-                    let remaining_tasks = remaining_tasks.clone();
-
                     let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
                     let end_xy = (start_xy.0 + task_dim_xy.0, start_xy.1 + task_dim_xy.1);
-                    let batch = TraceSceneBatchJob::new(cam, 
-                                                        world, 
+                    let batch = TraceSceneBatchJob::new(cam.clone(), 
+                                                        world.clone(), 
                                                         ns, 
                                                         start_xy, end_xy, 
-                                                        image_buffer, image_size, 
-                                                        remaining_tasks, 
-                                                        window_lock, window);
-                    batches.push(JobDescriptor::new(Box::new(batch)));
+                                                        bgr_texture.clone(), image_size, 
+                                                        remaining_tasks.clone(), 
+                                                        window_lock.clone(), window.clone());
+                    batches.push(JobDescriptor::new(Arc::new(batch)));
                 }
             }
 
-            Jobs::dispatch_jobs(batches);
+            Jobs::dispatch_jobs(&batches);
 
             loop {
                 // Poll message loop while we trace so we can early-exit
@@ -150,60 +142,266 @@ pub fn run() {
                 thread::sleep(Duration::from_secs(1));
             }
         } else {
-            let world = four_spheres();
             let start_xy = (0, 0);
             let end_xy = image_size;
-            let image_buffer = Arc::clone(&bgr_texture);
-            let cam = cam.clone();
-            let world = world.clone();
-            let window = window.clone();
-            let remaining_tasks = remaining_tasks.clone();
-            let batch = TraceSceneBatchJob::new(cam, 
-                                        world, 
-                                        ns, 
-                                        start_xy, end_xy, 
-                                        image_buffer, image_size, 
-                                        remaining_tasks, 
-                                        window_lock, window);
+            let batch = TraceSceneBatchJob::new(cam.clone(), 
+                                                world.clone(), 
+                                                ns, 
+                                                start_xy, end_xy, 
+                                                bgr_texture.clone(), image_size, 
+                                                remaining_tasks.clone(), 
+                                                window_lock.clone(), window.clone());
             batch.run();
         }
-    };
+        
+        // stats
+        let duration = start_timer.elapsed();
+        let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
+        update_window_title_status(&window, &format!("Done.. in {}s.", duration_in_secs));
 
-    trace_scene(&mut events_loop);
+        // write image 
+        let image_file_name = "output.ppm";
+        save_bgr_texture_as_ppm(image_file_name, &bgr_texture.lock().unwrap(), image_size);
 
-    // stats
-    let duration = start_timer.elapsed();
-    let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
-    update_window_title_status(&window, &format!("Done.. in {}s.", duration_in_secs));
-    
-    // don't need this across threads now, keep unlocked
-    let mut bgr_texture = bgr_texture.lock().unwrap();
-
-    // write image 
-    let image_file_name = "output.ppm";
-    save_bgr_texture_as_ppm(image_file_name, &bgr_texture, image_size);
-
-    events_loop.run_forever(|event| {
-        use winit::VirtualKeyCode;
-        match event {
-           Event::WindowEvent { event, .. } => match event {
-                WindowEvent::KeyboardInput { input, .. } => {
-                    if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
-                        ControlFlow::Break
-                    } else {
+        events_loop.run_forever(|event| {
+            use winit::VirtualKeyCode;
+            match event {
+                Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::KeyboardInput { input, .. } => {
+                        if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
+                            ControlFlow::Break
+                        } else {
+                            ControlFlow::Continue
+                        }
+                    }
+                    WindowEvent::CloseRequested => winit::ControlFlow::Break,
+                    WindowEvent::Resized(..) => {
+                        update_window_framebuffer(&window, &mut bgr_texture.lock().unwrap(), image_size);
                         ControlFlow::Continue
+                    },
+                    _ => ControlFlow::Continue,
+                },
+                 _ => ControlFlow::Continue,
+            }
+        });
+
+    } else  {
+    
+        let mut batches = vec![];
+        for task_y in 0..num_tasks_xy.1 {
+            for task_x in 0..num_tasks_xy.0 {
+                let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
+                let end_xy = (start_xy.0 + task_dim_xy.0, start_xy.1 + task_dim_xy.1);
+                let batch = TraceSceneBatchJob::new(cam.clone(), 
+                                                    world.clone(), 
+                                                    ns, 
+                                                    start_xy, end_xy, 
+                                                    bgr_texture.clone(), image_size, 
+                                                    remaining_tasks.clone(), 
+                                                    window_lock.clone(), window.clone());
+                batches.push(JobDescriptor::new(Arc::new(batch)));
+            }
+        }
+
+        const CAM_SPEED: f64 = 20.0;
+        const MOUSE_LOOK_SPEED: f64 = 0.4;
+        //const MOUSE_THRESHOLD: 
+        let mut keep_running = true;
+        let mut fps = 0.0;
+        let mut move_forward = false;
+        let mut frame_time = 0.1;
+        let mut move_left = false;
+        let mut move_right = false;
+        let mut move_backward = false;
+        let mut move_up = false;
+        let mut move_down = false;
+        let mut look_right = false;
+        let mut look_left = false;
+        let mut look_up = false;
+        let mut look_down = false;
+        let mut left_mouse_down = false;
+        let mut right_mouse_down = false;
+        let mut mouse_x = 0.0;
+        let mut mouse_y = 0.0;
+        while keep_running {
+            let start_timer = Instant::now();
+            let dpi = window.get_current_monitor().get_hidpi_factor();
+
+            // TODO(SS): debouncing, needs moving to struct
+            let mouse_x_last_frame = mouse_x;
+            let mouse_y_last_frame = mouse_y;
+            let left_mouse_down_last_frame = left_mouse_down;
+            let right_mouse_down_last_frame = right_mouse_down;
+
+            events_loop.poll_events(|event| {
+                use winit::VirtualKeyCode;
+                use winit::MouseButton;
+                use winit::ElementState;
+                match event {
+                Event::WindowEvent { event, .. } => match event {
+                        WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
+                            Some(VirtualKeyCode::Escape) => keep_running = false,
+                            Some(VirtualKeyCode::W) => move_forward = true,
+                            Some(VirtualKeyCode::S) => move_backward = true,
+                            Some(VirtualKeyCode::D) => move_right = true,
+                            Some(VirtualKeyCode::A) => move_left = true,
+                            Some(VirtualKeyCode::Q) => move_down = true,
+                            Some(VirtualKeyCode::E) => move_up = true,
+                            Some(VirtualKeyCode::Right) => look_right = true,
+                            Some(VirtualKeyCode::Left) => look_left = true,
+                            Some(VirtualKeyCode::Up) => look_up = true,
+                            Some(VirtualKeyCode::Down) => look_down = true,
+                            _ => {},
+                        },
+                        WindowEvent::MouseInput { state, button, .. } => {
+                            if button == MouseButton::Left {
+                                left_mouse_down = if state == ElementState::Pressed {true} else {false};
+                            }
+                            if button == MouseButton::Right {
+                                right_mouse_down = if state == ElementState::Pressed {true} else {false};
+                            }
+                        },
+                        WindowEvent::CursorMoved { position, .. } => {
+                            // Note(SS): This position is not ideal for mouse movement as it contains OS overrides like mouse accel.
+                            let physical_position = position.to_physical(dpi);
+                            mouse_x = physical_position.x;
+                            mouse_y = -physical_position.y;
+                        },
+                        WindowEvent::CloseRequested => keep_running = false,
+                        WindowEvent::Resized(..) => update_window_framebuffer(&window, &mut bgr_texture.lock().unwrap(), image_size),
+                        _ => {},
+                    },
+                    _ => {},
+                }
+            });
+
+            // handle input for camera
+            // TODO(SS): Move state into app struct and move to function just to keep this loop tidier
+            {
+                let mut cam = cam.write().unwrap();
+
+                if move_forward {
+                    move_forward = false;
+                    let cam_origin = cam.get_origin();
+                    let cam_forward = cam.get_forward();
+                    let new_cam_origin = cam_origin + cam_forward * CAM_SPEED * frame_time;
+                    cam.set_origin(new_cam_origin);
+                } 
+
+                if move_backward {
+                    move_backward = false;
+                    let cam_origin = cam.get_origin();
+                    let cam_forward = cam.get_forward();
+                    let new_cam_origin = cam_origin + -cam_forward * CAM_SPEED * frame_time;
+                    cam.set_origin(new_cam_origin);
+                }
+
+                if move_right {
+                    move_right = false;
+                    let cam_origin = cam.get_origin();
+                    let cam_right = cam.get_right();
+                    let new_cam_origin = cam_origin + cam_right * CAM_SPEED * frame_time;
+                    cam.set_origin(new_cam_origin);
+                }
+
+                if move_left {
+                    move_left = false;
+                    let cam_origin = cam.get_origin();
+                    let cam_right = cam.get_right();
+                    let new_cam_origin = cam_origin + -cam_right * CAM_SPEED * frame_time;
+                    cam.set_origin(new_cam_origin);
+                }
+
+                if move_up {
+                    move_up = false;
+                    let cam_origin = cam.get_origin();
+                    let cam_up = cam.get_up();
+                    let new_cam_origin = cam_origin + cam_up * CAM_SPEED * frame_time;
+                    cam.set_origin(new_cam_origin);
+                }
+
+                if move_down {
+                    move_down = false;
+                    let cam_origin = cam.get_origin();
+                    let cam_up = cam.get_up();
+                    let new_cam_origin = cam_origin + -cam_up * CAM_SPEED * frame_time;
+                    cam.set_origin(new_cam_origin);
+                }
+                
+                if look_right {
+                    look_right = false;
+                    let cam_look_at = cam.get_look_at();
+                    let cam_right = cam.get_right();
+                    let new_cam_look_at = cam_look_at + cam_right * CAM_SPEED * frame_time;
+                    cam.set_look_at(new_cam_look_at);
+                }
+                if look_left {
+                    look_left = false;
+                    let cam_look_at = cam.get_look_at();
+                    let cam_right = cam.get_right();
+                    let new_cam_look_at = cam_look_at + -cam_right * CAM_SPEED * frame_time;
+                    cam.set_look_at(new_cam_look_at);
+                }
+                if look_up {
+                    look_up = false;
+                    let cam_look_at = cam.get_look_at();
+                    let cam_up = cam.get_up();
+                    let new_cam_look_at = cam_look_at + cam_up * CAM_SPEED * frame_time;
+                    cam.set_look_at(new_cam_look_at);
+                }
+                if look_down {
+                    look_down = false;
+                    let cam_look_at = cam.get_look_at();
+                    let cam_up = cam.get_up();
+                    let new_cam_look_at = cam_look_at + -cam_up * CAM_SPEED * frame_time;
+                    cam.set_look_at(new_cam_look_at);
+                }
+                if right_mouse_down && right_mouse_down_last_frame {
+                    let mouse_x_delta = mouse_x - mouse_x_last_frame;
+                    let mouse_y_delta = mouse_y - mouse_y_last_frame;
+                    if mouse_x_delta != 0.0 || mouse_y_delta != 0.0
+                    { 
+                        let cam_look_at = cam.get_look_at();
+                        let cam_right = cam.get_right();
+                        let cam_up = cam.get_up();
+                        let mut new_cam_look_at = cam_look_at;
+                        if mouse_x_delta != 0.0 {
+                            new_cam_look_at += cam_right * MOUSE_LOOK_SPEED * frame_time * mouse_x_delta;
+                        }
+                        if mouse_y_delta != 0.0 {
+                            new_cam_look_at += cam_up * MOUSE_LOOK_SPEED * frame_time * mouse_y_delta;
+                        }
+                        cam.set_look_at(new_cam_look_at);
                     }
                 }
-                WindowEvent::CloseRequested => winit::ControlFlow::Break,
-                WindowEvent::Resized(..) => {
-                    update_window_framebuffer(&window, &mut bgr_texture, image_size);
-                    ControlFlow::Continue
+            }
+
+            assert!(Jobs::job_queue_empty());
+            Jobs::dispatch_jobs(&batches);
+            Jobs::wait_for_outstanding_jobs();
+            assert!(Jobs::job_queue_empty());
+
+            update_window_framebuffer(&window, &mut bgr_texture.lock().unwrap(), image_size);
+
+            // throttle main thread to 60fps
+            const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
+            match SIXTY_HZ.checked_sub(start_timer.elapsed()) {
+                Some(sleep_time) => {
+                    thread::sleep(sleep_time);
                 },
-                _ => ControlFlow::Continue,
-            },
-             _ => ControlFlow::Continue,
+                None => {}
+            };
+            
+            let frame_duration = start_timer.elapsed();
+            frame_time = frame_duration.as_secs() as f64 + frame_duration.subsec_nanos() as f64 * 1e-9;
+            fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
+            window.set_title(&format!("Path Tracer: FPS = {}", fps as i32));
         }
-    });
+
+        // write image 
+        let image_file_name = "output.ppm";
+        save_bgr_texture_as_ppm(image_file_name, &bgr_texture.lock().unwrap(), image_size);
+    }
 }
 
 fn update_window_title_status(window: &winit::Window, status: &str) {
@@ -297,7 +495,7 @@ fn four_spheres() -> Arc<Hitable + Send + Sync + 'static> {
     //        }
 //
     //        col = col / ns as f64;
-    //        col = Vec3::new(col.x().sqrt(), col.y().sqrt(), col.z().sqrt()); // Gamma correct 1/2.0
+    //        col = Vec3::new(col.x.sqrt(), col.y.sqrt(), col.z.sqrt()); // Gamma correct 1/2.0
 //
     //        let ir = (255.99*col.r()) as u8;
     //        let ig = (255.99*col.g()) as u8;

@@ -18,21 +18,21 @@ impl BvhNode {
 
         match axis {
             0 => local_list.sort_unstable_by(|a, b| {  
-                if a.bounding_box(0.0, 0.0).min().x() - b.bounding_box(0.0, 0.0).min().x() < 0.0 {
+                if a.bounding_box(0.0, 0.0).min().x - b.bounding_box(0.0, 0.0).min().x < 0.0 {
                     return std::cmp::Ordering::Less;
                 } else {
                     return std::cmp::Ordering::Greater;
                 }
             }),
             1 => local_list.sort_unstable_by(|a, b| {  
-                if a.bounding_box(0.0, 0.0).min().y() - b.bounding_box(0.0, 0.0).min().y() < 0.0 {
+                if a.bounding_box(0.0, 0.0).min().y - b.bounding_box(0.0, 0.0).min().y < 0.0 {
                     return std::cmp::Ordering::Less;
                 } else {
                     return std::cmp::Ordering::Greater;
                 }
             }),
             _ => local_list.sort_unstable_by(|a, b| {  
-                if a.bounding_box(0.0, 0.0).min().z() - b.bounding_box(0.0, 0.0).min().z() < 0.0 {
+                if a.bounding_box(0.0, 0.0).min().z - b.bounding_box(0.0, 0.0).min().z < 0.0 {
                     return std::cmp::Ordering::Less;
                 } else {
                     return std::cmp::Ordering::Greater;

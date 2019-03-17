@@ -1,5 +1,5 @@
 use std::f64;
-use std::sync::{Mutex, Arc};
+use std::sync::{Mutex, Arc, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use math::*;
@@ -14,10 +14,11 @@ type ThreadsafeCounter = Arc<AtomicUsize>;
 
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
-const ENABLE_RENDER: bool = true;
+pub const REALTIME: bool = true;
+const ENABLE_RENDER: bool = true && !REALTIME;
 
 pub struct TraceSceneBatchJob {
-    cam: Arc<Camera>,
+    cam: Arc<RwLock<Camera>>,
     world: Arc<Hitable + Send + Sync + 'static>,
     num_samples: u32,
     start_xy: (u32, u32),
@@ -30,7 +31,7 @@ pub struct TraceSceneBatchJob {
 }
 
 impl TraceSceneBatchJob {
-    pub fn new(cam: Arc<Camera>, world: Arc<Hitable + Send + Sync + 'static>, num_samples: u32, start_xy: (u32, u32), end_xy: (u32, u32), 
+    pub fn new(cam: Arc<RwLock<Camera>>, world: Arc<Hitable + Send + Sync + 'static>, num_samples: u32, start_xy: (u32, u32), end_xy: (u32, u32), 
                buffer: LockableImageBuffer, image_size: (u32, u32), remaining_tasks: ThreadsafeCounter,
                window_lock: Arc<AtomicBool>, window: Arc<winit::Window>) -> TraceSceneBatchJob {
         TraceSceneBatchJob {
@@ -60,6 +61,9 @@ impl TraceSceneBatchJob {
             self.window_lock.store(false, Ordering::Release);
         };
 
+        // nothing should be writing to cam when we trace. We don't need it for the whole loop but more efficient to grab once here
+        let cam = self.cam.read().unwrap();
+
         for j in (self.start_xy.1..self.end_xy.1).rev() {
 
             let stride = (num_pixels_xy.0 * 3) as usize;
@@ -74,7 +78,7 @@ impl TraceSceneBatchJob {
                     let random = random::rand();
                     let v: f64 = ((j as f64) + random) / (self.image_size.1 as f64);
 
-                    let r = self.cam.get_ray(u, v);
+                    let r = cam.get_ray(u, v);
                     col += color(&r, &self.world, 0);
 
                     // SS: Debug uv image
@@ -82,7 +86,7 @@ impl TraceSceneBatchJob {
                 }
 
                 col = col / self.num_samples as f64;
-                col = Vec3::new(col.x().sqrt(), col.y().sqrt(), col.z().sqrt()); // Gamma correct 1/2.0
+                col = Vec3::new(col.x.sqrt(), col.y.sqrt(), col.z.sqrt()); // Gamma correct 1/2.0
 
                 let ir = (255.99*col.r()) as u8;
                 let ig = (255.99*col.g()) as u8;
@@ -139,7 +143,7 @@ fn color(r : &Ray, world: &Arc<Hitable + Send + Sync + 'static>, depth: i32) -> 
         return Vec3::new_zero_vector();
     } else {
         let unit_dir = Vec3::new_unit_vector(&r.direction());
-        let t = 0.5*(unit_dir.y() + 1.0);
+        let t = 0.5*(unit_dir.y + 1.0);
         let white = Vec3::from_float(1.0);
         let sky = Vec3::new(0.5, 0.7, 1.0);
         return lerp(&white, &sky, t);
