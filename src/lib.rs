@@ -99,12 +99,12 @@ pub fn run() {
 
     update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks_xy.0 * num_tasks_xy.1));
 
-    let mut shared_scene_state = Arc::new(RwLock::new(SharedSceneReadState::new(cam, world, window)));
-    let mut shared_write_state = Arc::new(SharedSceneWriteState::new(bgr_texture, remaining_tasks, window_lock));
+    let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window)));
+    let scene_output = Arc::new(SceneOutput::new(bgr_texture, remaining_tasks, window_lock));
 
     if !REALTIME {
         if !RUN_SINGLE_THREADED {
-            let mut batches = vec![];
+            let mut batches: Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>> = vec![];
             for task_y in 0..num_tasks_xy.1 {
                 for task_x in 0..num_tasks_xy.0 {
                     let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
@@ -112,10 +112,10 @@ pub fn run() {
                     let batch = TraceSceneBatchJob::new(ns, 
                                                         start_xy, end_xy, 
                                                         image_size, 
-                                                         shared_scene_state.clone(),
-                                                         shared_write_state.clone(),
+                                                         scene_state.clone(),
+                                                         scene_output.clone(),
                                                         );
-                    batches.push(JobDescriptor::new(Arc::new(RwLock::new(batch))));
+                    batches.push(Arc::new(RwLock::new(batch)));
                 }
             }
 
@@ -141,7 +141,7 @@ pub fn run() {
 
                 // wait for threads to finish by checking atomic ref count on the shared image buffer
                 // Note(SS): Could use condvars here but then wouldn't be able to poll the message queue
-                if shared_write_state.remaining_tasks.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
+                if scene_output.remaining_tasks.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
                     break;
                 }
 
@@ -154,18 +154,18 @@ pub fn run() {
             let mut batch = TraceSceneBatchJob::new(ns, 
                                                 start_xy, end_xy, 
                                                 image_size, 
-                                                shared_scene_state.clone(), shared_write_state.clone());
+                                                scene_state.clone(), scene_output.clone());
             batch.run();
         }
         
         // stats
         let duration = start_timer.elapsed();
         let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
-        update_window_title_status(&shared_scene_state.read().unwrap().window, &format!("Done.. in {}s.", duration_in_secs));
+        update_window_title_status(&scene_state.read().unwrap().window, &format!("Done.. in {}s.", duration_in_secs));
 
         // write image 
         let image_file_name = "output.ppm";
-        save_bgr_texture_as_ppm(image_file_name, &shared_write_state.buffer.lock().unwrap(), image_size);
+        save_bgr_texture_as_ppm(image_file_name, &scene_output.buffer.lock().unwrap(), image_size);
 
         events_loop.run_forever(|event| {
             use winit::VirtualKeyCode;
@@ -180,7 +180,7 @@ pub fn run() {
                     }
                     WindowEvent::CloseRequested => winit::ControlFlow::Break,
                     WindowEvent::Resized(..) => {
-                        update_window_framebuffer(&shared_scene_state.read().unwrap().window, &mut shared_write_state.buffer.lock().unwrap(), image_size);
+                        update_window_framebuffer(&scene_state.read().unwrap().window, &mut scene_output.buffer.lock().unwrap(), image_size);
                         ControlFlow::Continue
                     },
                     _ => ControlFlow::Continue,
@@ -192,7 +192,7 @@ pub fn run() {
     } else  {
     
         let mut batches = vec![];
-        let mut jobs = vec![];
+        let mut jobs: Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>>  = vec![];
         for task_y in 0..num_tasks_xy.1 {
             for task_x in 0..num_tasks_xy.0 {
                 let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
@@ -200,10 +200,10 @@ pub fn run() {
                 let batch = TraceSceneBatchJob::new(ns, 
                                                     start_xy, end_xy, 
                                                      image_size, 
-                                                     shared_scene_state.clone(), shared_write_state.clone());
+                                                     scene_state.clone(), scene_output.clone());
                 let batch = Arc::new(RwLock::new(batch));
-                jobs.push(JobDescriptor::new(batch.clone()));
-                batches.push(batch);
+                batches.push(batch.clone());
+                jobs.push(batch);
             }
         }
 
@@ -233,9 +233,9 @@ pub fn run() {
 
             // App logic - modifying of shared state allowed
             {
-                let mut shared_scene_state_writable = shared_scene_state.write().unwrap();
+                let mut scene_state_writable = scene_state.write().unwrap();
 
-                let dpi = shared_scene_state_writable.window.get_current_monitor().get_hidpi_factor();
+                let dpi = scene_state_writable.window.get_current_monitor().get_hidpi_factor();
 
                 // TODO(SS): debouncing, needs moving to struct
                 let mouse_x_last_frame = mouse_x;
@@ -278,7 +278,7 @@ pub fn run() {
                                 mouse_y = -physical_position.y;
                             },
                             WindowEvent::CloseRequested => keep_running = false,
-                            WindowEvent::Resized(..) => update_window_framebuffer(&shared_scene_state_writable.window, &mut shared_write_state.buffer.lock().unwrap(), image_size),
+                            WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut scene_output.buffer.lock().unwrap(), image_size),
                             _ => {},
                         },
                         _ => {},
@@ -288,7 +288,7 @@ pub fn run() {
                 // handle input for camera
                 // TODO(SS): Move state into app struct and move to function just to keep this loop tidier
                 {
-                    let cam = &mut shared_scene_state_writable.cam;
+                    let cam = &mut scene_state_writable.cam;
                     let mut camera_moved = false;
                     if move_forward {
                         move_forward = false;
@@ -415,14 +415,12 @@ pub fn run() {
                 }
             }
 
-            assert!(Jobs::job_queue_empty());
-            Jobs::dispatch_jobs(&jobs);
-            Jobs::wait_for_outstanding_jobs();
-            assert!(Jobs::job_queue_empty());
+            let job_counter = Jobs::dispatch_jobs(&jobs);
+            Jobs::wait_for_counter(&job_counter, 0);
 
-            let shared_scene_state_writable = shared_scene_state.read().unwrap();
+            let scene_state_writable = scene_state.read().unwrap();
 
-            update_window_framebuffer(&shared_scene_state_writable.window, &mut shared_write_state.buffer.lock().unwrap(), image_size);
+            update_window_framebuffer(&scene_state_writable.window, &mut scene_output.buffer.lock().unwrap(), image_size);
 
             // throttle main thread to 60fps
             const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
@@ -436,12 +434,12 @@ pub fn run() {
             let frame_duration = start_timer.elapsed();
             frame_time = frame_duration.as_secs() as f64 + frame_duration.subsec_nanos() as f64 * 1e-9;
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
-            shared_scene_state_writable.window.set_title(&format!("Path Tracer: FPS = {}", fps as i32));
+            scene_state_writable.window.set_title(&format!("Path Tracer: FPS = {}", fps as i32));
         }
 
         // write image 
         let image_file_name = "output.ppm";
-        save_bgr_texture_as_ppm(image_file_name, &shared_write_state.buffer.lock().unwrap(), image_size);
+        save_bgr_texture_as_ppm(image_file_name, &scene_output.buffer.lock().unwrap(), image_size);
     }
 }
 

@@ -1,7 +1,6 @@
 use std::f64;
 use std::sync::{Mutex, Arc, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::rc::Rc;
 
 use math::*;
 use hitable::*;
@@ -10,24 +9,21 @@ use winit_utils::*;
 
 use jobs::JobTask;
 
-type LockableImageBuffer = Arc<Mutex<Vec<u8>>>;
-type ThreadsafeCounter = Arc<AtomicUsize>;
-
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
-pub const REALTIME: bool = true;
+pub const REALTIME: bool = false;
 const ENABLE_RENDER: bool = true && !REALTIME;
 
-pub struct SharedSceneWriteState {
+pub struct SceneOutput {
     pub buffer: Mutex<Vec<u8>>,
     pub window_lock: AtomicBool, 
     pub remaining_tasks: AtomicUsize,
 }
 
-impl SharedSceneWriteState {
-    pub fn new(buffer: Mutex<Vec<u8>>, remaining_tasks: AtomicUsize, window_lock: AtomicBool) -> SharedSceneWriteState {
+impl SceneOutput {
+    pub fn new(buffer: Mutex<Vec<u8>>, remaining_tasks: AtomicUsize, window_lock: AtomicBool) -> SceneOutput {
             
-        SharedSceneWriteState {
+        SceneOutput {
             buffer,
             window_lock,
             remaining_tasks,
@@ -35,16 +31,16 @@ impl SharedSceneWriteState {
     }
 }
 
-pub struct SharedSceneReadState {
+pub struct SceneState {
     pub cam: Camera,
     pub world: Box<Hitable + Send + Sync + 'static>,
     pub window: winit::Window,
 }
 
-impl SharedSceneReadState {
-    pub fn new(cam: Camera, world: Box<Hitable + Send + Sync + 'static>, window: winit::Window) -> SharedSceneReadState {
+impl SceneState {
+    pub fn new(cam: Camera, world: Box<Hitable + Send + Sync + 'static>, window: winit::Window) -> SceneState {
             
-        SharedSceneReadState {
+        SceneState {
             cam,
             world,
             window,
@@ -61,13 +57,13 @@ pub struct TraceSceneBatchJob {
     image_start_xy: (u32, u32),
     local_buffer_u8: Vec<u8>,
     local_buffer_f32: Vec<f32>,
-    shared_scene_read_state: Arc<RwLock<SharedSceneReadState>>,
-    shared_scene_write_state: Arc<SharedSceneWriteState>,
+    shared_scene_read_state: Arc<RwLock<SceneState>>,
+    shared_scene_write_state: Arc<SceneOutput>,
 }
 
 impl TraceSceneBatchJob {
     pub fn new(num_samples: u32, start_xy: (u32, u32), end_xy: (u32, u32), 
-               image_size: (u32, u32), shared_scene_read_state: Arc<RwLock<SharedSceneReadState>>, shared_scene_write_state: Arc<SharedSceneWriteState>) -> TraceSceneBatchJob {
+               image_size: (u32, u32), shared_scene_read_state: Arc<RwLock<SceneState>>, shared_scene_write_state: Arc<SceneOutput>) -> TraceSceneBatchJob {
         let num_pixels_xy = (end_xy.0 - start_xy.0, end_xy.1 - start_xy.1);
         // the window and image buffer start with 0 at the top not the bottom so we must convert here.
         let image_start_xy = (start_xy.0, image_size.1 - start_xy.1 - num_pixels_xy.1);

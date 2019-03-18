@@ -3,6 +3,7 @@ use std::thread::JoinHandle;
 use std::sync::{Arc, RwLock, Condvar, Mutex};
 use std::collections::VecDeque;
 use lazy_static::lazy_static;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 lazy_static! {
     static ref THREAD_POOL: ThreadPool = ThreadPool::new();
@@ -12,19 +13,16 @@ pub struct Jobs {}
 
 #[allow(dead_code)]
 impl Jobs {
-    pub fn dispatch_job(job_task: JobDescriptor) {
-        THREAD_POOL.push_job(job_task);
+    pub fn dispatch_job(job_task: Arc<RwLock<JobTask + Send + Sync + 'static>>) -> Arc<JobCounter>  {
+        THREAD_POOL.push_job(job_task)
     }
 
-    pub fn dispatch_jobs(job_tasks: &Vec<JobDescriptor>) {
-        THREAD_POOL.push_job_array(&job_tasks);
+    pub fn dispatch_jobs(job_tasks: &Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>>) -> Arc<JobCounter> {
+        THREAD_POOL.push_job_array(&job_tasks)
     }
 
-    // !!! TODO(SS): THIS ONLY FENCES ONE THREAD - NEEDS FIXING SO ALL THREADS SYNC !!!
-    pub fn wait_for_outstanding_jobs() {
-        let fence = Fence::new();
-        Jobs::dispatch_job(JobDescriptor::new(Arc::new(RwLock::new(FenceJob::new(fence.clone())))));
-        fence.wait();
+    pub fn wait_for_counter( job_counter: &JobCounter, value: usize) {
+        job_counter.wake_on_value(value);
     }
 
     pub fn job_queue_empty() -> bool {
@@ -36,51 +34,30 @@ pub trait JobTask {
     fn run(&mut self);
 }
 
-#[derive(Clone)]
-struct Fence {
-    value: Arc<(Mutex<bool>, Condvar)>,
+pub struct JobCounter {
+    condvar: Condvar,
+    counter: Mutex<AtomicUsize>
 }
 
-impl Fence {
-    fn new() -> Fence {
-        Fence {
-            value: Arc::new((Mutex::new(false), Condvar::new()))
+impl JobCounter {
+    fn new(count: usize) -> JobCounter {
+        JobCounter {
+            condvar: Condvar::new(),
+            counter: Mutex::new(AtomicUsize::new(count)),
         }
     }
 
-    fn notify(&self) {
-        let &(ref lock, ref condvar) = &*self.value;
-        let mut notified = lock.lock().unwrap();
-        *notified = true;
-        condvar.notify_one();
+    fn decrement(&self) {
+        let counter = self.counter.lock().unwrap();
+        counter.fetch_sub(1, Ordering::SeqCst);
+        self.condvar.notify_one();
     }
 
-    fn wait(&self) {
-        let &(ref lock, ref condvar) = &*self.value;
-        let mut notified = lock.lock().unwrap();
-        // wait for notifcation
-        while !*notified {
-            // this allows the thread to sleep and not use cycles, however it may wake up spuriously so that is why we also check "notified"
-            notified = condvar.wait(notified).unwrap();
+    fn wake_on_value(&self, value: usize)  {
+        let mut counter = self.counter.lock().unwrap();
+        while counter.compare_and_swap(value, 1, Ordering::Acquire) != value {
+            counter = self.condvar.wait(counter).unwrap();
         }
-    }
-}
-
-struct FenceJob {
-    fence: Fence,
-}
-
-impl FenceJob {
-    fn new(fence: Fence) -> FenceJob {
-        FenceJob {
-            fence
-        }
-    }
-}
-
-impl JobTask for FenceJob {
-    fn run(&mut self) {
-        self.fence.notify();
     }
 }
 
@@ -110,14 +87,22 @@ impl ThreadPool {
         }
     }
 
-    pub fn push_job(&self, job_task: JobDescriptor) {
-        self.job_queue.push(job_task);
+    pub fn push_job(&self, job_task: Arc<RwLock<JobTask + Send + Sync + 'static>>) -> Arc<JobCounter> {
         self.thread_wake_event.wake_threads(); // notify threads to wake
+        let job_counter = Arc::new(JobCounter::new(1));
+        let job_descriptor = JobDescriptor::new(job_task, job_counter.clone());
+        self.job_queue.push(job_descriptor);
+        job_counter
     }
 
-    pub fn push_job_array(&self, job_tasks: &Vec<JobDescriptor>) {
-        self.job_queue.push_array(&job_tasks);
-        self.thread_wake_event.wake_threads();  // notify threads to wake
+    pub fn push_job_array(&self, job_tasks: &Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>>) -> Arc<JobCounter> {
+        self.thread_wake_event.wake_threads(); // notify threads to wake
+        let job_counter = Arc::new(JobCounter::new(job_tasks.len()));
+        for job in job_tasks {
+            let job_descriptor = JobDescriptor::new(job.clone(), job_counter.clone());
+            self.job_queue.push(job_descriptor);
+        }
+        job_counter
     }
 
     fn destroy(&mut self) {
@@ -137,16 +122,18 @@ impl Drop for ThreadPool {
 #[derive(Clone)]
 pub struct JobDescriptor{
     job: Arc<RwLock<JobTask + Send + Sync + 'static>>,
+    job_counter: Arc<JobCounter>,
 }
 
 impl JobDescriptor {
-    pub fn new(job: Arc<RwLock<JobTask + Send + Sync + 'static>>) -> JobDescriptor {
+    pub fn new(job: Arc<RwLock<JobTask + Send + Sync + 'static>>, job_counter: Arc<JobCounter>) -> JobDescriptor {
         JobDescriptor {
-            job: job
+            job: job,
+            job_counter,
         }
     }
 
-    fn run(self) {
+    fn run(&self) {
         self.job.write().unwrap().run();
     }
 }
@@ -167,13 +154,6 @@ impl JobQueue {
     fn push(&self, descriptor: JobDescriptor) {
         let mut queue = self.queue.write().unwrap();
         queue.push_back(descriptor);
-    }
-
-    fn push_array(&self, descriptor_array: &Vec<JobDescriptor>) {
-        let mut queue = self.queue.write().unwrap();
-        for descriptor in descriptor_array {
-            queue.push_back((*descriptor).clone());
-        }
     }
 
     fn pop(&self) -> Option<JobDescriptor> {
@@ -265,6 +245,7 @@ impl JobThread {
             match self.queue.pop() {
                 Some(job_descriptor) => {
                     job_descriptor.run();
+                    job_descriptor.job_counter.decrement();
                     spins = 0;
                 },
                 None => {
