@@ -11,7 +11,7 @@ use jobs::JobTask;
 
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
-pub const REALTIME: bool = false;
+pub const REALTIME: bool = true;
 const ENABLE_RENDER: bool = true && !REALTIME;
 
 pub struct SceneOutput {
@@ -106,6 +106,14 @@ impl TraceSceneBatchJob {
             let mut buffer_offset = row_offset;
 
             for i in self.start_xy.0..self.end_xy.0 {
+
+                // TODO(SS): Use random sampling - Not working properly
+                //if !REALTIME {
+                //    if random::rand() > 0.5 {
+                //        continue;
+                //    }
+                //}
+
                 let mut col = Vec3::new_zero_vector();
                 for _ in 0..self.num_samples {
                     let random = random::rand();
@@ -122,7 +130,7 @@ impl TraceSceneBatchJob {
 
                 col = col / self.num_samples as f64;
 
-                const WEIGHT: f32 = 1.0;
+                const WEIGHT: f32 = 0.1;
                 const ONE_MINUS_WEIGHT: f32 = 1.0 - WEIGHT;
 
                 if REALTIME {

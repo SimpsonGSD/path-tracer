@@ -38,7 +38,7 @@ mod jobs;
 use math::*;
 use hitable::*;
 use camera::Camera;
-use texture::ConstantTexture;
+use texture::{ConstantTexture, CheckerTexture};
 use material::*;
 use sphere::Sphere;
 use bvh::BvhNode;
@@ -68,7 +68,8 @@ pub fn run() {
     update_window_title_status(&window, &format!("Starting.. image size ({} x {})", nx, ny));
 
     //let world = two_spheres();
-    let world = four_spheres();
+    //let world = four_spheres();
+    let world = random_scene();
 
     let lookfrom = Vec3::new(13.0,2.0,3.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
@@ -513,4 +514,84 @@ fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
 
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
     //Box::new(HitableList::new(list))
+}
+
+fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
+    let checker_texture = Arc::new(CheckerTexture::new(Arc::new(ConstantTexture::new(Vec3::new(0.2, 0.3, 0.1))), 
+                                                      Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.9)))));
+
+    let mut list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![];
+
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(checker_texture.clone())))));
+
+    // TODO
+    //const MOVING_SPHERES: bool = false;
+
+    for a in -11..11 {
+        for b in -11..11 {
+            let choose_mat = random::rand();
+            let center = Vec3::new(a as f64 + 0.9 * random::rand(), 0.2, b as f64 + 0.9 * random::rand());
+            if (&center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
+                if choose_mat < 0.8 { // diffuse 
+                    list.push(
+                        Arc::new(
+                            Sphere::new(
+                                center.clone(), 
+                                0.2, 
+                                Arc::new(
+                                    Lambertian::new(
+                                        Arc::new(
+                                            ConstantTexture::new(
+                                                Vec3::new(
+                                                    random::rand()*random::rand(), 
+                                                    random::rand()*random::rand(), 
+                                                    random::rand()*random::rand()
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    );
+                }
+            } else if choose_mat < 0.95 { // metal
+                list.push(
+                    Arc::new(
+                        Sphere::new(
+                            center.clone(), 
+                            0.2,
+                            Arc::new(
+                                Metal::new(
+                                    Vec3::new(
+                                        0.5*(1.0+random::rand()),
+                                        0.5*(1.0+random::rand()),
+                                        0.5*(1.0+random::rand())),
+                                        0.5*random::rand()
+                                    )
+                                )
+                            )
+                        )
+                    );
+            } else { // glass
+                list.push(
+                    Arc::new(
+                        Sphere::new(
+                            center.clone(), 
+                            0.2,
+                            Arc::new(
+                                Dielectric::new(1.5)
+                            )
+                        )
+                    )
+                );
+            }
+        }
+    }
+
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0,Arc::new(Dielectric::new(0.5)))));
+    list.push(Arc::new(Sphere::new(Vec3::new(-4.0, 1.0, 0.0), 1.0,Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.4, 0.2, 0.1))))))));
+    list.push(Arc::new(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0,Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)))));
+
+    Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }
