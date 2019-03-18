@@ -73,8 +73,8 @@ pub fn run() {
     //let lookat = Vec3::new(0.0,0.0,0.0);
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
     let lookat = Vec3::new(0.0,0.0,-1.0);
-    let dist_to_focus = 14.0;
-    let aperture = 0.1;
+    let dist_to_focus = 11.0;
+    let aperture = 0.3;
     let aspect: f64 = (nx as f64)/(ny as f64);
     let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
 
@@ -488,7 +488,7 @@ fn four_spheres() -> Arc<Hitable + Send + Sync + 'static> {
     let green_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.9, 0.0)))));
     let yellow_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.0)))));
 
-    let dielectric_material = Arc::new(Dielectric::new(1.2));
+    let dielectric_material = Arc::new(Dielectric::new(1.6));
     let metal_material = Arc::new(Metal::new(Vec3::from_float(1.0), 0.0));
 
     let list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![
@@ -497,7 +497,7 @@ fn four_spheres() -> Arc<Hitable + Send + Sync + 'static> {
         Arc::new(Sphere::new(Vec3::new(1.0,  0.0, -1.0), 0.5, green_material)),
         Arc::new(Sphere::new(Vec3::new(-1.0,  0.0, 0.0), 0.5, yellow_material)),
         Arc::new(Sphere::new(Vec3::new(0.4,  -0.25, -0.3), 0.25, dielectric_material.clone())),
-        Arc::new(Sphere::new(Vec3::new(2.5,  -0.25, -0.3), 0.25, dielectric_material.clone())),
+        Arc::new(Sphere::new(Vec3::new(2.5,  -0.15, -0.4), 0.25, dielectric_material.clone())),
         //Arc::new(Sphere::new(Vec3::new(0.4,  0.0, 0.0), 0.1, dielectric_material)),
         Arc::new(Sphere::new(Vec3::new(2.0,  0.0, -1.0), 0.5, metal_material.clone())),
         Arc::new(Sphere::new(Vec3::new(1.6,  0.0, 1.0), 0.5, metal_material.clone())),
@@ -506,70 +506,3 @@ fn four_spheres() -> Arc<Hitable + Send + Sync + 'static> {
     Arc::new(BvhNode::from_list(list, 0.0, 1.0))
     //Box::new(HitableList::new(list))
 }
-
-//#[allow(dead_code)]
-//pub fn trace_scene(cam: &Camera, world: &Box<Hitable>, num_samples: u32, start_xy: (u32, u32), end_xy: (u32, u32), 
-//                   buffer_width_height: (u32, u32), draw_lock: Arc<AtomicBool>, window: &winit::Window) 
-//{
-    //for j in (0..ny).rev() {
-    //    for i in 0..nx {
-//
-    //        let mut col = Vec3::new_zero_vector();
-    //        for _ in 0..ns {
-    //            let random = random::rand();
-    //            let u: f64 = ((i as f64) + random) / (nx as f64);
-    //            let random = random::rand();
-    //            let v: f64 = ((j as f64) + random) / (ny as f64);
-//
-    //            let r = cam.get_ray(u, v);
-    //            col += color(&r, &world, 0);
-//
-    //            // SS: Debug uv image
-    //            // col += Vec3::new(u, v, 0.0);
-    //        }
-//
-    //        col = col / ns as f64;
-    //        col = Vec3::new(col.x.sqrt(), col.y.sqrt(), col.z.sqrt()); // Gamma correct 1/2.0
-//
-    //        let ir = (255.99*col.r()) as u8;
-    //        let ig = (255.99*col.g()) as u8;
-    //        let ib = (255.99*col.b()) as u8;
-    //        
-    //        let offset = (j * nx * 3 + i * 3) as usize;
-    //        bgr_image_buffer[offset] = ib;
-    //        bgr_image_buffer[offset+1] = ig;
-    //        bgr_image_buffer[offset+2] = ir;
-    //        rgb_image_buffer[offset] = ir;
-    //        rgb_image_buffer[offset+1] = ig;
-    //        rgb_image_buffer[offset+2] = ib;
-    //    }
-//
-    //    if j % 20 == 0 {
-    //        
-    //        // Poll message loop while we trace
-    //        events_loop.poll_events(|event| {
-    //            use winit::VirtualKeyCode;
-    //            match event {
-    //                Event::WindowEvent { event, .. } => match event {
-    //                    WindowEvent::KeyboardInput { input, .. } => {
-    //                        if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
-    //                            std::process::exit(0);
-    //                        }
-    //                    }
-    //                    WindowEvent::CloseRequested => std::process::exit(0),
-    //                    _ => {},
-    //                },
-    //                _ => {},
-    //            }
-    //        });
-//
-    //        // Update frame buffer to show progress
-    //        update_window_framebuffer(&window, &mut bgr_image_buffer, (nx, ny));
-    //        
-    //        let progress = 100.0 * ((ny - (j+1)) * nx) as f64 / ((ny*nx) as f64);
-    //        let progress_string = format!("Ray Tracer: Progress {} {}%",  (ny - j) * nx, progress);
-    //        window.set_title(&progress_string);
-    //        print!("\r{}", &progress_string);
-    //    }
-    //}
-//}
