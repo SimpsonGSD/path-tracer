@@ -73,7 +73,7 @@ pub fn run() {
     //let lookat = Vec3::new(0.0,0.0,0.0);
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
     let lookat = Vec3::new(0.0,0.0,-1.0);
-    let dist_to_focus = 10.0;
+    let dist_to_focus = 14.0;
     let aperture = 0.1;
     let aspect: f64 = (nx as f64)/(ny as f64);
     let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));

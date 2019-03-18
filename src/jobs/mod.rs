@@ -92,7 +92,7 @@ struct ThreadPool {
 
 impl ThreadPool {
     pub fn new() -> ThreadPool {
-        let num_cores = (num_cpus::get() - 1).max(1);
+        let num_cores = (num_cpus::get()).max(1);
         println!("Thread pool: Spooling up {} threads", num_cores);
         
         let job_queue = JobQueue::new();
