@@ -23,7 +23,7 @@ impl Jobs {
     // !!! TODO(SS): THIS ONLY FENCES ONE THREAD - NEEDS FIXING SO ALL THREADS SYNC !!!
     pub fn wait_for_outstanding_jobs() {
         let fence = Fence::new();
-        Jobs::dispatch_job(JobDescriptor::new(Arc::new(FenceJob::new(fence.clone()))));
+        Jobs::dispatch_job(JobDescriptor::new(Arc::new(RwLock::new(FenceJob::new(fence.clone())))));
         fence.wait();
     }
 
@@ -33,7 +33,7 @@ impl Jobs {
 }
 
 pub trait JobTask {
-    fn run(&self);
+    fn run(&mut self);
 }
 
 #[derive(Clone)]
@@ -79,7 +79,7 @@ impl FenceJob {
 }
 
 impl JobTask for FenceJob {
-    fn run(&self) {
+    fn run(&mut self) {
         self.fence.notify();
     }
 }
@@ -136,18 +136,18 @@ impl Drop for ThreadPool {
 
 #[derive(Clone)]
 pub struct JobDescriptor{
-    job: Arc<JobTask + Send + Sync + 'static>,
+    job: Arc<RwLock<JobTask + Send + Sync + 'static>>,
 }
 
 impl JobDescriptor {
-    pub fn new(job: Arc<JobTask + Send + Sync + 'static>) -> JobDescriptor {
+    pub fn new(job: Arc<RwLock<JobTask + Send + Sync + 'static>>) -> JobDescriptor {
         JobDescriptor {
             job: job
         }
     }
 
     fn run(self) {
-        self.job.run();
+        self.job.write().unwrap().run();
     }
 }
 

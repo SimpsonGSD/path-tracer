@@ -28,12 +28,19 @@ pub struct TraceSceneBatchJob {
     remaining_tasks: ThreadsafeCounter,
     window_lock: Arc<AtomicBool>, 
     window: Arc<winit::Window>,
+    num_pixels_xy: (u32, u32),
+    image_start_xy: (u32, u32),
+    local_buffer_u8: Vec<u8>,
+    local_buffer_f32: Vec<f32>,
 }
 
 impl TraceSceneBatchJob {
     pub fn new(cam: Arc<RwLock<Camera>>, world: Arc<Hitable + Send + Sync + 'static>, num_samples: u32, start_xy: (u32, u32), end_xy: (u32, u32), 
                buffer: LockableImageBuffer, image_size: (u32, u32), remaining_tasks: ThreadsafeCounter,
                window_lock: Arc<AtomicBool>, window: Arc<winit::Window>) -> TraceSceneBatchJob {
+        let num_pixels_xy = (end_xy.0 - start_xy.0, end_xy.1 - start_xy.1);
+        // the window and image buffer start with 0 at the top not the bottom so we must convert here.
+        let image_start_xy = (start_xy.0, image_size.1 - start_xy.1 - num_pixels_xy.1);
         TraceSceneBatchJob {
             cam,
             world,
@@ -44,21 +51,28 @@ impl TraceSceneBatchJob {
             image_size,
             remaining_tasks,
             window_lock,
-            window
+            window,
+            num_pixels_xy,
+            image_start_xy,
+            local_buffer_u8: if !REALTIME {vec![0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize]} else {vec![]},
+            local_buffer_f32: if REALTIME {vec![0.0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize]} else {vec![]}
         }
     }
 
-    fn trace(&self) {
-        let num_pixels_xy = (self.end_xy.0 - self.start_xy.0, self.end_xy.1 - self.start_xy.1);
-        let mut local_buffer = vec![0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize];
+    pub fn clear_buffer(&mut self) {
+        if REALTIME {
+            self.local_buffer_f32 = vec![0.0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
+        } else {
+            self.local_buffer_u8 = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
+        }
+    }
 
-        // the window and image buffer start with 0 at the top not the bottom so we must convert here.
-        let image_start_xy = (self.start_xy.0, self.image_size.1 - self.start_xy.1 - num_pixels_xy.1);
+    fn trace(&mut self) {
 
-        let update_window_and_release_lock = |buffer: &mut Vec<u8>| {
+        let update_window_and_release_lock = |buffer: &mut Vec<u8>, window: &winit::Window, image_start_xy: (u32,u32), num_pixels_xy: (u32,u32), window_lock: &Arc<AtomicBool>| {
             // TODO(SS): Optimise so we are only copying the changed buffer parts
-            update_window_framebuffer_rect(&self.window, buffer, image_start_xy, num_pixels_xy);
-            self.window_lock.store(false, Ordering::Release);
+            update_window_framebuffer_rect(&window, buffer, image_start_xy, num_pixels_xy);
+            window_lock.store(false, Ordering::Release);
         };
 
         // nothing should be writing to cam when we trace. We don't need it for the whole loop but more efficient to grab once here
@@ -66,7 +80,7 @@ impl TraceSceneBatchJob {
 
         for j in (self.start_xy.1..self.end_xy.1).rev() {
 
-            let stride = (num_pixels_xy.0 * 3) as usize;
+            let stride = (self.num_pixels_xy.0 * 3) as usize;
             let row_offset = stride * (j - self.start_xy.1) as usize;
             let mut buffer_offset = row_offset;
 
@@ -86,23 +100,47 @@ impl TraceSceneBatchJob {
                 }
 
                 col = col / self.num_samples as f64;
-                col = Vec3::new(col.x.sqrt(), col.y.sqrt(), col.z.sqrt()); // Gamma correct 1/2.0
 
-                let ir = (255.99*col.r()) as u8;
-                let ig = (255.99*col.g()) as u8;
-                let ib = (255.99*col.b()) as u8;
-                
-                local_buffer[buffer_offset]   = ib;
-                buffer_offset += 1;
-                local_buffer[buffer_offset]  = ig;
-                buffer_offset += 1;
-                local_buffer[buffer_offset]  = ir;
-                buffer_offset += 1;
+                const WEIGHT: f32 = 0.1;
+                const ONE_MINUS_WEIGHT: f32 = 1.0 - WEIGHT;
+
+                if REALTIME {
+                    self.local_buffer_f32[buffer_offset]  = (col.z as f32) * WEIGHT + self.local_buffer_f32[buffer_offset] * ONE_MINUS_WEIGHT;
+                    buffer_offset += 1;
+                    self.local_buffer_f32[buffer_offset]  = (col.y as f32) * WEIGHT + self.local_buffer_f32[buffer_offset] * ONE_MINUS_WEIGHT;
+                    buffer_offset += 1;
+                    self.local_buffer_f32[buffer_offset]  = (col.x as f32) * WEIGHT + self.local_buffer_f32[buffer_offset] * ONE_MINUS_WEIGHT;
+                    buffer_offset += 1;
+                } else {
+                    col = Vec3::new(col.x.sqrt(), col.y.sqrt(), col.z.sqrt()); // Gamma correct 1/2.0
+
+                    let ir = (255.99*col.r()) as u8;
+                    let ig = (255.99*col.g()) as u8;
+                    let ib = (255.99*col.b()) as u8;
+                    
+                    self.local_buffer_u8[buffer_offset]  = ib;
+                    buffer_offset += 1;
+                    self.local_buffer_u8[buffer_offset]  = ig;
+                    buffer_offset += 1;
+                    self.local_buffer_u8[buffer_offset]  = ir;
+                    buffer_offset += 1;
+                }
             }
 
             // copy 1 row of our local buffer into correct slice of image buffer.
             {
-                let src_buffer = &local_buffer[row_offset..row_offset + stride];
+                let u8_buffer: Vec<u8>;
+                let src_buffer;
+                if REALTIME { 
+                    // for now gamma correct and convert to u8.
+                    // TODO(SS): This will be done in shader
+                    u8_buffer = self.local_buffer_f32[row_offset..row_offset + stride].iter().map(|x| {
+                        (255.99*x.sqrt()) as u8
+                    }).collect();
+                   src_buffer = &u8_buffer[..];
+                } else {
+                    src_buffer = &self.local_buffer_u8[row_offset..row_offset + stride]
+                }
                 let mut buffer_mutex = self.buffer.lock().unwrap();
                 let start = (self.start_xy.0 * 3 + j * self.image_size.0 * 3) as usize;
                 let dest_buffer = &mut buffer_mutex[start..start + stride];
@@ -111,14 +149,14 @@ impl TraceSceneBatchJob {
 
             if ENABLE_RENDER && j % RENDER_UPDATE_LATENCY == 0 && self.window_lock.compare_and_swap(false, true, Ordering::Acquire)  {
                 // Update frame buffer to show progress
-                update_window_and_release_lock(&mut local_buffer);
+                update_window_and_release_lock(&mut self.local_buffer_u8, &self.window, self.image_start_xy, self.num_pixels_xy, &self.window_lock);
             }
         }
 
         if ENABLE_RENDER {
             while self.window_lock.compare_and_swap(false, true, Ordering::Acquire)  {
                 // Update frame buffer to show progress
-                update_window_and_release_lock(&mut local_buffer);
+                update_window_and_release_lock(&mut self.local_buffer_u8, &self.window, self.image_start_xy, self.num_pixels_xy, &self.window_lock);
             }
         }
 
@@ -128,7 +166,7 @@ impl TraceSceneBatchJob {
 }
 
 impl JobTask for TraceSceneBatchJob {
-    fn run(&self) {
+    fn run(&mut self) {
         self.trace();
     }
 }

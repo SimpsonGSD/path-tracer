@@ -108,7 +108,7 @@ pub fn run() {
                                                         bgr_texture.clone(), image_size, 
                                                         remaining_tasks.clone(), 
                                                         window_lock.clone(), window.clone());
-                    batches.push(JobDescriptor::new(Arc::new(batch)));
+                    batches.push(JobDescriptor::new(Arc::new(RwLock::new(batch))));
                 }
             }
 
@@ -144,7 +144,7 @@ pub fn run() {
         } else {
             let start_xy = (0, 0);
             let end_xy = image_size;
-            let batch = TraceSceneBatchJob::new(cam.clone(), 
+            let mut batch = TraceSceneBatchJob::new(cam.clone(), 
                                                 world.clone(), 
                                                 ns, 
                                                 start_xy, end_xy, 
@@ -188,6 +188,7 @@ pub fn run() {
     } else  {
     
         let mut batches = vec![];
+        let mut jobs = vec![];
         for task_y in 0..num_tasks_xy.1 {
             for task_x in 0..num_tasks_xy.0 {
                 let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
@@ -199,7 +200,9 @@ pub fn run() {
                                                     bgr_texture.clone(), image_size, 
                                                     remaining_tasks.clone(), 
                                                     window_lock.clone(), window.clone());
-                batches.push(JobDescriptor::new(Arc::new(batch)));
+                let batch = Arc::new(RwLock::new(batch));
+                jobs.push(JobDescriptor::new(batch.clone()));
+                batches.push(batch);
             }
         }
 
@@ -279,53 +282,72 @@ pub fn run() {
             // TODO(SS): Move state into app struct and move to function just to keep this loop tidier
             {
                 let mut cam = cam.write().unwrap();
-
+                let mut camera_moved = false;
                 if move_forward {
                     move_forward = false;
                     let cam_origin = cam.get_origin();
                     let cam_forward = cam.get_forward();
-                    let new_cam_origin = cam_origin + cam_forward * CAM_SPEED * frame_time;
-                    cam.set_origin(new_cam_origin);
+                    let diff = cam_forward * CAM_SPEED * frame_time;
+                    cam.set_origin(cam_origin + &diff);
+                    let cam_look_at = cam.get_look_at();
+                    cam.set_look_at(cam_look_at + &diff);
+                    camera_moved = true;
                 } 
 
                 if move_backward {
                     move_backward = false;
                     let cam_origin = cam.get_origin();
                     let cam_forward = cam.get_forward();
-                    let new_cam_origin = cam_origin + -cam_forward * CAM_SPEED * frame_time;
-                    cam.set_origin(new_cam_origin);
+                    let diff = -cam_forward * CAM_SPEED * frame_time;
+                    cam.set_origin(cam_origin + &diff);
+                    let cam_look_at = cam.get_look_at();
+                    cam.set_look_at(cam_look_at + &diff);
+                    camera_moved = true;
                 }
 
                 if move_right {
                     move_right = false;
                     let cam_origin = cam.get_origin();
                     let cam_right = cam.get_right();
-                    let new_cam_origin = cam_origin + cam_right * CAM_SPEED * frame_time;
-                    cam.set_origin(new_cam_origin);
+                    let diff = cam_right * CAM_SPEED * frame_time;
+                    cam.set_origin(cam_origin + &diff);
+                    let cam_look_at = cam.get_look_at();
+                    cam.set_look_at(cam_look_at + &diff);
+                    camera_moved = true;
+                    
                 }
 
                 if move_left {
                     move_left = false;
                     let cam_origin = cam.get_origin();
                     let cam_right = cam.get_right();
-                    let new_cam_origin = cam_origin + -cam_right * CAM_SPEED * frame_time;
-                    cam.set_origin(new_cam_origin);
+                    let diff = -cam_right * CAM_SPEED * frame_time;
+                    cam.set_origin(cam_origin + &diff);
+                    let cam_look_at = cam.get_look_at();
+                    cam.set_look_at(cam_look_at + &diff);
+                    camera_moved = true;
                 }
 
                 if move_up {
                     move_up = false;
                     let cam_origin = cam.get_origin();
                     let cam_up = cam.get_up();
-                    let new_cam_origin = cam_origin + cam_up * CAM_SPEED * frame_time;
-                    cam.set_origin(new_cam_origin);
+                    let diff = cam_up * CAM_SPEED * frame_time;
+                    cam.set_origin(cam_origin + &diff);
+                    let cam_look_at = cam.get_look_at();
+                    cam.set_look_at(cam_look_at + &diff);
+                    camera_moved = true;
                 }
 
                 if move_down {
                     move_down = false;
                     let cam_origin = cam.get_origin();
                     let cam_up = cam.get_up();
-                    let new_cam_origin = cam_origin + -cam_up * CAM_SPEED * frame_time;
-                    cam.set_origin(new_cam_origin);
+                    let diff = -cam_up * CAM_SPEED * frame_time;
+                    cam.set_origin(cam_origin + &diff);
+                    let cam_look_at = cam.get_look_at();
+                    cam.set_look_at(cam_look_at + &diff);
+                    camera_moved = true;
                 }
                 
                 if look_right {
@@ -334,6 +356,7 @@ pub fn run() {
                     let cam_right = cam.get_right();
                     let new_cam_look_at = cam_look_at + cam_right * CAM_SPEED * frame_time;
                     cam.set_look_at(new_cam_look_at);
+                    camera_moved = true;
                 }
                 if look_left {
                     look_left = false;
@@ -341,6 +364,7 @@ pub fn run() {
                     let cam_right = cam.get_right();
                     let new_cam_look_at = cam_look_at + -cam_right * CAM_SPEED * frame_time;
                     cam.set_look_at(new_cam_look_at);
+                    camera_moved = true;
                 }
                 if look_up {
                     look_up = false;
@@ -348,6 +372,7 @@ pub fn run() {
                     let cam_up = cam.get_up();
                     let new_cam_look_at = cam_look_at + cam_up * CAM_SPEED * frame_time;
                     cam.set_look_at(new_cam_look_at);
+                    camera_moved = true;
                 }
                 if look_down {
                     look_down = false;
@@ -355,6 +380,7 @@ pub fn run() {
                     let cam_up = cam.get_up();
                     let new_cam_look_at = cam_look_at + -cam_up * CAM_SPEED * frame_time;
                     cam.set_look_at(new_cam_look_at);
+                    camera_moved = true;
                 }
                 if right_mouse_down && right_mouse_down_last_frame {
                     let mouse_x_delta = mouse_x - mouse_x_last_frame;
@@ -372,12 +398,17 @@ pub fn run() {
                             new_cam_look_at += cam_up * MOUSE_LOOK_SPEED * frame_time * mouse_y_delta;
                         }
                         cam.set_look_at(new_cam_look_at);
+                        camera_moved = true;
                     }
+                }
+
+                if camera_moved {
+                    batches.iter().for_each(|batch| batch.write().unwrap().clear_buffer());
                 }
             }
 
             assert!(Jobs::job_queue_empty());
-            Jobs::dispatch_jobs(&batches);
+            Jobs::dispatch_jobs(&jobs);
             Jobs::wait_for_outstanding_jobs();
             assert!(Jobs::job_queue_empty());
 
@@ -453,20 +484,23 @@ fn two_spheres() -> Box<Hitable + Send + Sync + 'static> {
 
 fn four_spheres() -> Arc<Hitable + Send + Sync + 'static> {
     let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.0, 0.0)))));
-    let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.1, 0.8)))));
+    let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.3, 0.3, 0.3)))));
     let green_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.9, 0.0)))));
     let yellow_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.0)))));
 
     let dielectric_material = Arc::new(Dielectric::new(1.2));
-    let metal_material = Arc::new(Metal::new(Vec3::from_float(0.9), 0.5));
+    let metal_material = Arc::new(Metal::new(Vec3::from_float(1.0), 0.0));
 
     let list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![
-        Arc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
+        Arc::new(Sphere::new(Vec3::new(4.0, -0.3, 0.7), 0.3, red_material)),
         Arc::new(Sphere::new(Vec3::new(0.0,  -100.5, -1.0), 100.0, blue_material)),
         Arc::new(Sphere::new(Vec3::new(1.0,  0.0, -1.0), 0.5, green_material)),
-        Arc::new(Sphere::new(Vec3::new(-1.0,  0.0, -1.0), 0.5, yellow_material)),
-        Arc::new(Sphere::new(Vec3::new(-2.0,  0.0, -1.0), 0.5, dielectric_material)),
-        Arc::new(Sphere::new(Vec3::new(2.0,  0.0, -1.0), 0.5, metal_material)),
+        Arc::new(Sphere::new(Vec3::new(-1.0,  0.0, 0.0), 0.5, yellow_material)),
+        Arc::new(Sphere::new(Vec3::new(0.4,  -0.25, -0.3), 0.25, dielectric_material.clone())),
+        Arc::new(Sphere::new(Vec3::new(2.5,  -0.25, -0.3), 0.25, dielectric_material.clone())),
+        //Arc::new(Sphere::new(Vec3::new(0.4,  0.0, 0.0), 0.1, dielectric_material)),
+        Arc::new(Sphere::new(Vec3::new(2.0,  0.0, -1.0), 0.5, metal_material.clone())),
+        Arc::new(Sphere::new(Vec3::new(1.6,  0.0, 1.0), 0.5, metal_material.clone())),
     ];
 
     Arc::new(BvhNode::from_list(list, 0.0, 1.0))
