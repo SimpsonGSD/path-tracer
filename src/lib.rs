@@ -76,7 +76,7 @@ pub fn run() {
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
     let lookat = Vec3::new(0.0,0.0,-1.0);
     let dist_to_focus = 11.0;
-    let aperture = 0.3;
+    let aperture = 0.01;
     let aspect: f64 = (nx as f64)/(ny as f64);
 
    // let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
@@ -527,6 +527,7 @@ fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
     // TODO
     //const MOVING_SPHERES: bool = false;
 
+    if true {
     for a in -11..11 {
         for b in -11..11 {
             let choose_mat = random::rand();
@@ -554,42 +555,44 @@ fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
                             )
                         )
                     );
-                }
-            } else if choose_mat < 0.95 { // metal
-                list.push(
-                    Arc::new(
-                        Sphere::new(
-                            center.clone(), 
-                            0.2,
-                            Arc::new(
-                                Metal::new(
-                                    Vec3::new(
-                                        0.5*(1.0+random::rand()),
-                                        0.5*(1.0+random::rand()),
-                                        0.5*(1.0+random::rand())),
-                                        0.5*random::rand()
+
+                } else if choose_mat < 0.95 { // metal
+                    list.push(
+                        Arc::new(
+                            Sphere::new(
+                                center.clone(), 
+                                0.2,
+                                Arc::new(
+                                    Metal::new(
+                                        Vec3::new(
+                                            0.5*(1.0+random::rand()),
+                                            0.5*(1.0+random::rand()),
+                                            0.5*(1.0+random::rand())),
+                                            0.5*random::rand()
+                                        )
                                     )
+                                )
+                            )
+                        );
+                } else { // glass
+                    list.push(
+                        Arc::new(
+                            Sphere::new(
+                                center.clone(), 
+                                0.2,
+                                Arc::new(
+                                    Dielectric::new(1.5)
                                 )
                             )
                         )
                     );
-            } else { // glass
-                list.push(
-                    Arc::new(
-                        Sphere::new(
-                            center.clone(), 
-                            0.2,
-                            Arc::new(
-                                Dielectric::new(1.5)
-                            )
-                        )
-                    )
-                );
+                }
             }
         }
     }
+    }
 
-    list.push(Arc::new(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0,Arc::new(Dielectric::new(0.5)))));
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0,Arc::new(Dielectric::new(1.5)))));
     list.push(Arc::new(Sphere::new(Vec3::new(-4.0, 1.0, 0.0), 1.0,Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.4, 0.2, 0.1))))))));
     list.push(Arc::new(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0,Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)))));
 

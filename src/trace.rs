@@ -59,6 +59,7 @@ pub struct TraceSceneBatchJob {
     local_buffer_f32: Vec<f32>,
     shared_scene_read_state: Arc<RwLock<SceneState>>,
     shared_scene_write_state: Arc<SceneOutput>,
+    num_frames: i32,
 }
 
 impl TraceSceneBatchJob {
@@ -77,11 +78,13 @@ impl TraceSceneBatchJob {
             local_buffer_u8: if !REALTIME {vec![0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize]} else {vec![]},
             local_buffer_f32: if REALTIME {vec![0.0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize]} else {vec![]},
             shared_scene_read_state,
-            shared_scene_write_state
+            shared_scene_write_state,
+            num_frames: 0
         }
     }
 
     pub fn clear_buffer(&mut self) {
+        self.num_frames = 0;
         if REALTIME {
             self.local_buffer_f32 = vec![0.0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
         } else {
@@ -97,6 +100,7 @@ impl TraceSceneBatchJob {
             window_lock.store(false, Ordering::Release);
         };
 
+        self.num_frames += if self.num_frames == 10 {0} else {1};
         let read_state = self.shared_scene_read_state.read().unwrap();
 
         for j in (self.start_xy.1..self.end_xy.1).rev() {
@@ -130,15 +134,15 @@ impl TraceSceneBatchJob {
 
                 col = col / self.num_samples as f64;
 
-                const WEIGHT: f32 = 0.1;
-                const ONE_MINUS_WEIGHT: f32 = 1.0 - WEIGHT;
+                let weight = 1.0 / self.num_frames as f32;
+                let one_minus_weight: f32 = 1.0 - weight;
 
                 if REALTIME {
-                    self.local_buffer_f32[buffer_offset]  = (col.z as f32) * WEIGHT + self.local_buffer_f32[buffer_offset] * ONE_MINUS_WEIGHT;
+                    self.local_buffer_f32[buffer_offset]  = (col.z as f32) * weight + self.local_buffer_f32[buffer_offset] * one_minus_weight;
                     buffer_offset += 1;
-                    self.local_buffer_f32[buffer_offset]  = (col.y as f32) * WEIGHT + self.local_buffer_f32[buffer_offset] * ONE_MINUS_WEIGHT;
+                    self.local_buffer_f32[buffer_offset]  = (col.y as f32) * weight + self.local_buffer_f32[buffer_offset] * one_minus_weight;
                     buffer_offset += 1;
-                    self.local_buffer_f32[buffer_offset]  = (col.x as f32) * WEIGHT + self.local_buffer_f32[buffer_offset] * ONE_MINUS_WEIGHT;
+                    self.local_buffer_f32[buffer_offset]  = (col.x as f32) * weight + self.local_buffer_f32[buffer_offset] * one_minus_weight;
                     buffer_offset += 1;
                 } else {
                     col = Vec3::new(col.x.sqrt(), col.y.sqrt(), col.z.sqrt()); // Gamma correct 1/2.0
