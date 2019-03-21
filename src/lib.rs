@@ -76,7 +76,7 @@ pub fn run() {
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
     let lookat = Vec3::new(0.0,0.0,-1.0);
     let dist_to_focus = 11.0;
-    let aperture = 0.01;
+    let aperture = 0.001;
     let aspect: f64 = (nx as f64)/(ny as f64);
 
    // let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
@@ -533,7 +533,7 @@ fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
             let choose_mat = random::rand();
             let center = Vec3::new(a as f64 + 0.9 * random::rand(), 0.2, b as f64 + 0.9 * random::rand());
             if (&center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
-                if choose_mat < 0.8 { // diffuse 
+                if choose_mat < 0.6 { // diffuse 
                     list.push(
                         Arc::new(
                             Sphere::new(
@@ -556,7 +556,7 @@ fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
                         )
                     );
 
-                } else if choose_mat < 0.95 { // metal
+                } else if choose_mat < 0.8 { // metal
                     list.push(
                         Arc::new(
                             Sphere::new(
@@ -568,7 +568,7 @@ fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
                                             0.5*(1.0+random::rand()),
                                             0.5*(1.0+random::rand()),
                                             0.5*(1.0+random::rand())),
-                                            0.5*random::rand()
+                                            0.2*random::rand()
                                         )
                                     )
                                 )
