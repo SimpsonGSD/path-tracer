@@ -396,7 +396,7 @@ pub fn run() {
                         if mouse_x_delta != 0.0 || mouse_y_delta != 0.0
                         { 
                             let cam_look_at = cam.get_look_at();
-                            let cam_right = cam.get_right();
+                            let cam_right = cam.get_world_xz_right();
                             let cam_up = cam.get_up();
                             let mut new_cam_look_at = cam_look_at;
                             if mouse_x_delta != 0.0 {

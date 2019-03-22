@@ -83,12 +83,19 @@ impl Camera {
         self.look_at.clone()
     }
 
+    pub fn get_world_xz_right(&self) -> Vec3 {
+        let world_up = Vec3::new(0.0, 1.0, 0.0);
+        Vec3::new_unit_vector(&vec3::cross(&world_up, &self.w))
+    }
+
     pub fn set_look_at(&mut self, look_at: Vec3) {
         self.look_at = look_at;
         self.w = Vec3::new_unit_vector(&(&self.origin - &self.look_at));
         self.u = Vec3::new_unit_vector(&vec3::cross(&self.v, &self.w));
         self.v = vec3::cross(&self.w, &self.u);
         self.lower_left_corner = self.calc_lower_left_corner();
+        self.horizontal = &self.u*2.0*self.half_width*self.focus_dist;
+        self.vertical = &self.v*2.0*self.half_height*self.focus_dist;
     }
 
 
