@@ -71,7 +71,7 @@ pub fn run() {
     //let world = four_spheres();
     let world = random_scene();
 
-    let lookfrom = Vec3::new(13.0,2.0,3.0);
+    let lookfrom = Vec3::new(0.0,4.0,13.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
     let lookat = Vec3::new(0.0,0.0,-1.0);
@@ -296,9 +296,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_forward = cam.get_forward();
                         let diff = cam_forward * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff);
-                        let cam_look_at = cam.get_look_at();
-                        cam.set_look_at(cam_look_at + &diff);
+                        cam.set_origin(cam_origin + &diff, false);
                         camera_moved = true;
                     } 
 
@@ -307,9 +305,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_forward = cam.get_forward();
                         let diff = -cam_forward * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff);
-                        let cam_look_at = cam.get_look_at();
-                        cam.set_look_at(cam_look_at + &diff);
+                        cam.set_origin(cam_origin + &diff, false);
                         camera_moved = true;
                     }
 
@@ -318,9 +314,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_right = cam.get_right();
                         let diff = cam_right * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff);
-                        let cam_look_at = cam.get_look_at();
-                        cam.set_look_at(cam_look_at + &diff);
+                        cam.set_origin(cam_origin + &diff, false);
                         camera_moved = true;
                         
                     }
@@ -330,9 +324,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_right = cam.get_right();
                         let diff = -cam_right * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff);
-                        let cam_look_at = cam.get_look_at();
-                        cam.set_look_at(cam_look_at + &diff);
+                        cam.set_origin(cam_origin + &diff, false);
                         camera_moved = true;
                     }
 
@@ -341,9 +333,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_up = cam.get_up();
                         let diff = cam_up * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff);
-                        let cam_look_at = cam.get_look_at();
-                        cam.set_look_at(cam_look_at + &diff);
+                        cam.set_origin(cam_origin + &diff, false);
                         camera_moved = true;
                     }
 
@@ -352,9 +342,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_up = cam.get_up();
                         let diff = -cam_up * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff);
-                        let cam_look_at = cam.get_look_at();
-                        cam.set_look_at(cam_look_at + &diff);
+                        cam.set_origin(cam_origin + &diff, false);
                         camera_moved = true;
                     }
                     
@@ -362,32 +350,28 @@ pub fn run() {
                         look_right = false;
                         let cam_look_at = cam.get_look_at();
                         let cam_right = cam.get_right();
-                        let new_cam_look_at = cam_look_at + cam_right * CAM_SPEED * frame_time;
-                        cam.set_look_at(new_cam_look_at);
+                        cam.set_look_at(cam_look_at + cam_right * CAM_SPEED * frame_time);
                         camera_moved = true;
                     }
                     if look_left {
                         look_left = false;
                         let cam_look_at = cam.get_look_at();
                         let cam_right = cam.get_right();
-                        let new_cam_look_at = cam_look_at + -cam_right * CAM_SPEED * frame_time;
-                        cam.set_look_at(new_cam_look_at);
+                        cam.set_look_at(cam_look_at + -cam_right * CAM_SPEED * frame_time);
                         camera_moved = true;
                     }
                     if look_up {
                         look_up = false;
                         let cam_look_at = cam.get_look_at();
                         let cam_up = cam.get_up();
-                        let new_cam_look_at = cam_look_at + cam_up * CAM_SPEED * frame_time;
-                        cam.set_look_at(new_cam_look_at);
+                        cam.set_look_at(cam_look_at + cam_up * CAM_SPEED * frame_time);
                         camera_moved = true;
                     }
                     if look_down {
                         look_down = false;
                         let cam_look_at = cam.get_look_at();
                         let cam_up = cam.get_up();
-                        let new_cam_look_at = cam_look_at + -cam_up * CAM_SPEED * frame_time;
-                        cam.set_look_at(new_cam_look_at);
+                        cam.set_look_at(cam_look_at + -cam_up * CAM_SPEED * frame_time);
                         camera_moved = true;
                     }
                     if right_mouse_down && right_mouse_down_last_frame {
@@ -395,22 +379,26 @@ pub fn run() {
                         let mouse_y_delta = mouse_y - mouse_y_last_frame;
                         if mouse_x_delta != 0.0 || mouse_y_delta != 0.0
                         { 
-                            let cam_look_at = cam.get_look_at();
-                            let cam_right = cam.get_world_xz_right();
+                            let mut cam_look_at = cam.get_look_at();
+                            let cam_right = cam.get_right();
                             let cam_up = cam.get_up();
-                            let mut new_cam_look_at = cam_look_at;
                             if mouse_x_delta != 0.0 {
-                                new_cam_look_at += cam_right * MOUSE_LOOK_SPEED * frame_time * mouse_x_delta;
+                                let pan_distance = MOUSE_LOOK_SPEED * frame_time * mouse_x_delta;
+                                cam_look_at.x += cam_right.x * pan_distance;
+                                cam_look_at.y += cam_right.y * pan_distance;
+                                cam_look_at.z += cam_right.z * pan_distance;
                             }
                             if mouse_y_delta != 0.0 {
-                                new_cam_look_at += cam_up * MOUSE_LOOK_SPEED * frame_time * mouse_y_delta;
+                                cam_look_at += cam_up * MOUSE_LOOK_SPEED * frame_time * mouse_y_delta;
                             }
-                            cam.set_look_at(new_cam_look_at);
+                            cam.set_look_at(cam_look_at);
                             camera_moved = true;
                         }
                     }
 
-                    if camera_moved {
+
+                    if true || camera_moved {
+                        cam.update();
                         batches.iter().for_each(|batch| batch.write().unwrap().clear_buffer());
                     }
                 }
@@ -527,7 +515,7 @@ fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
     // TODO
     //const MOVING_SPHERES: bool = false;
 
-    if true {
+    if false {
     for a in -11..11 {
         for b in -11..11 {
             let choose_mat = random::rand();
@@ -592,9 +580,9 @@ fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
     }
     }
 
-    list.push(Arc::new(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0,Arc::new(Dielectric::new(1.5)))));
+  //  list.push(Arc::new(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0,Arc::new(Dielectric::new(1.5)))));
     list.push(Arc::new(Sphere::new(Vec3::new(-4.0, 1.0, 0.0), 1.0,Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.4, 0.2, 0.1))))))));
-    list.push(Arc::new(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0,Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)))));
+  //  list.push(Arc::new(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0,Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)))));
 
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }

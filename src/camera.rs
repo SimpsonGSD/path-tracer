@@ -17,6 +17,7 @@ pub struct Camera {
     half_width: f64,
     half_height: f64, 
     focus_dist: f64,
+    world_up: Vec3
 }
 
 impl Camera {
@@ -44,6 +45,7 @@ impl Camera {
             half_width,
             half_height, 
             focus_dist,
+            world_up: vup
         }
     }
 
@@ -52,10 +54,6 @@ impl Camera {
         let offset = &self.u*rd.x + &self.v*rd.y;
         let time = self.time0 + random::rand()*(self.time1 - self.time0);
         Ray::new(&self.origin + &offset, &self.lower_left_corner + &self.horizontal*s + &self.vertical*t - &self.origin - offset, time)
-    }
-
-    fn calc_lower_left_corner(&self) -> Vec3 {
-         &self.origin - &(&self.u*self.half_width*self.focus_dist) - &(&self.v*self.half_height*self.focus_dist) - &(&self.w*self.focus_dist)
     }
 
     pub fn get_forward(&self) -> Vec3 {
@@ -74,31 +72,31 @@ impl Camera {
         self.origin.clone()
     }
 
-    pub fn set_origin(&mut self, origin: Vec3) {
+    pub fn set_origin(&mut self, origin: Vec3, update_look_at: bool) {
+        if update_look_at {
+            self.look_at += &origin - &self.origin;
+        }
         self.origin = origin;
-        self.lower_left_corner = self.calc_lower_left_corner();
+        self.lower_left_corner = &self.origin - &(&self.u*self.half_width*self.focus_dist) - &(&self.v*self.half_height*self.focus_dist) - &(&self.w*self.focus_dist)
     }
 
     pub fn get_look_at(&self) -> Vec3 {
         self.look_at.clone()
     }
 
-    pub fn get_world_xz_right(&self) -> Vec3 {
-        let world_up = Vec3::new(0.0, 1.0, 0.0);
-        Vec3::new_unit_vector(&vec3::cross(&world_up, &self.w))
-    }
-
-    pub fn set_look_at(&mut self, look_at: Vec3) {
-        self.look_at = look_at;
+    pub fn update(&mut self) {
         self.w = Vec3::new_unit_vector(&(&self.origin - &self.look_at));
-        self.u = Vec3::new_unit_vector(&vec3::cross(&self.v, &self.w));
+        self.u = Vec3::new_unit_vector(&vec3::cross(&self.world_up, &self.w));
         self.v = vec3::cross(&self.w, &self.u);
-        self.lower_left_corner = self.calc_lower_left_corner();
+        self.lower_left_corner = &self.origin - &(&self.u*self.half_width*self.focus_dist) - &(&self.v*self.half_height*self.focus_dist) - &(&self.w*self.focus_dist);
         self.horizontal = &self.u*2.0*self.half_width*self.focus_dist;
         self.vertical = &self.v*2.0*self.half_height*self.focus_dist;
     }
 
-
+    pub fn set_look_at(&mut self, look_at: Vec3) {
+        self.look_at = look_at;
+        println!("{:?}", self.look_at);
+    }
 
     //pub fn get_look
 }
