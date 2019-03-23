@@ -93,9 +93,15 @@ impl Camera {
         self.vertical = &self.v*2.0*self.half_height*self.focus_dist;
     }
 
-    pub fn set_look_at(&mut self, look_at: Vec3) {
+    pub fn set_look_at(&mut self, look_at: Vec3, maintain_distance: bool) {
+        let mut look_at = look_at;
+        if maintain_distance {
+             // minimise drift - ensure new look is same distance apart
+            let look_at_dist = (&self.origin - &self.look_at).length();
+            let new_look_at_dist = (&self.origin - &look_at).length();
+            look_at *= look_at_dist / new_look_at_dist;
+        }
         self.look_at = look_at;
-        println!("{:?}", self.look_at);
     }
 
     //pub fn get_look

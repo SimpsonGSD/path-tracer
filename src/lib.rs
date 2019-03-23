@@ -208,7 +208,7 @@ pub fn run() {
             }
         }
 
-        const CAM_SPEED: f64 = 5.0;
+        const CAM_SPEED: f64 = 4.0;
         const MOUSE_LOOK_SPEED: f64 = 0.4;
         //const MOUSE_THRESHOLD: 
         let mut keep_running = true;
@@ -296,7 +296,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_forward = cam.get_forward();
                         let diff = cam_forward * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, false);
+                        cam.set_origin(cam_origin + &diff, true);
                         camera_moved = true;
                     } 
 
@@ -305,7 +305,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_forward = cam.get_forward();
                         let diff = -cam_forward * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, false);
+                        cam.set_origin(cam_origin + &diff, true);
                         camera_moved = true;
                     }
 
@@ -314,7 +314,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_right = cam.get_right();
                         let diff = cam_right * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, false);
+                        cam.set_origin(cam_origin + &diff, true);
                         camera_moved = true;
                         
                     }
@@ -324,7 +324,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_right = cam.get_right();
                         let diff = -cam_right * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, false);
+                        cam.set_origin(cam_origin + &diff, true);
                         camera_moved = true;
                     }
 
@@ -333,7 +333,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_up = cam.get_up();
                         let diff = cam_up * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, false);
+                        cam.set_origin(cam_origin + &diff, true);
                         camera_moved = true;
                     }
 
@@ -342,7 +342,7 @@ pub fn run() {
                         let cam_origin = cam.get_origin();
                         let cam_up = cam.get_up();
                         let diff = -cam_up * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, false);
+                        cam.set_origin(cam_origin + &diff, true);
                         camera_moved = true;
                     }
                     
@@ -350,28 +350,28 @@ pub fn run() {
                         look_right = false;
                         let cam_look_at = cam.get_look_at();
                         let cam_right = cam.get_right();
-                        cam.set_look_at(cam_look_at + cam_right * CAM_SPEED * frame_time);
+                        cam.set_look_at(cam_look_at + cam_right * CAM_SPEED * frame_time, true);
                         camera_moved = true;
                     }
                     if look_left {
                         look_left = false;
                         let cam_look_at = cam.get_look_at();
                         let cam_right = cam.get_right();
-                        cam.set_look_at(cam_look_at + -cam_right * CAM_SPEED * frame_time);
+                        cam.set_look_at(cam_look_at + -cam_right * CAM_SPEED * frame_time, true);
                         camera_moved = true;
                     }
                     if look_up {
                         look_up = false;
                         let cam_look_at = cam.get_look_at();
                         let cam_up = cam.get_up();
-                        cam.set_look_at(cam_look_at + cam_up * CAM_SPEED * frame_time);
+                        cam.set_look_at(cam_look_at + cam_up * CAM_SPEED * frame_time, true);
                         camera_moved = true;
                     }
                     if look_down {
                         look_down = false;
                         let cam_look_at = cam.get_look_at();
                         let cam_up = cam.get_up();
-                        cam.set_look_at(cam_look_at + -cam_up * CAM_SPEED * frame_time);
+                        cam.set_look_at(cam_look_at + -cam_up * CAM_SPEED * frame_time, true);
                         camera_moved = true;
                     }
                     if right_mouse_down && right_mouse_down_last_frame {
@@ -383,15 +383,13 @@ pub fn run() {
                             let cam_right = cam.get_right();
                             let cam_up = cam.get_up();
                             if mouse_x_delta != 0.0 {
-                                let pan_distance = MOUSE_LOOK_SPEED * frame_time * mouse_x_delta;
-                                cam_look_at.x += cam_right.x * pan_distance;
-                                cam_look_at.y += cam_right.y * pan_distance;
-                                cam_look_at.z += cam_right.z * pan_distance;
+                                cam_look_at += cam_right * MOUSE_LOOK_SPEED * frame_time * mouse_x_delta
                             }
                             if mouse_y_delta != 0.0 {
                                 cam_look_at += cam_up * MOUSE_LOOK_SPEED * frame_time * mouse_y_delta;
                             }
-                            cam.set_look_at(cam_look_at);
+
+                            cam.set_look_at(cam_look_at, true);
                             camera_moved = true;
                         }
                     }
