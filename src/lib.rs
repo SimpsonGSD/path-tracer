@@ -397,7 +397,7 @@ pub fn run() {
                     }
 
 
-                    if true || camera_moved {
+                    if camera_moved {
                         cam.update();
                         batches.iter().for_each(|batch| batch.write().unwrap().clear_buffer());
                     }
