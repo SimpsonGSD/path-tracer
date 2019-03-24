@@ -15,6 +15,7 @@ use jobs::MultiSliceReadWriteLock;
 const RENDER_UPDATE_LATENCY: u32 = 20; 
 pub const REALTIME: bool = true;
 const ENABLE_RENDER: bool = true && !REALTIME;
+const CHANCE_TO_SKIP_PER_FRAME: f64 = 0.9;
 
 pub struct SceneOutput {
     pub buffer: MultiSliceReadWriteLock<Vec<f32>>,
@@ -65,6 +66,7 @@ pub struct TraceSceneBatchJob {
     shared_scene_read_state: Arc<RwLock<SceneState>>,
     shared_scene_write_state: Arc<SceneOutput>,
     num_frames: i32,
+    num_frames_per_pixel: Vec<u32>
 }
 
 impl TraceSceneBatchJob {
@@ -83,12 +85,15 @@ impl TraceSceneBatchJob {
             local_buffer_u8: if !REALTIME {vec![0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize]} else {vec![]},
             shared_scene_read_state,
             shared_scene_write_state,
-            num_frames: 0
+            num_frames: 0,
+            num_frames_per_pixel: vec![0; (num_pixels_xy.0*num_pixels_xy.1) as usize]
         }
     }
 
     pub fn clear_buffer(&mut self) {
         self.num_frames = 0;
+        self.num_frames_per_pixel = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1) as usize];
+        
         if !REALTIME {
             self.local_buffer_u8 = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
         } 
@@ -105,27 +110,29 @@ impl TraceSceneBatchJob {
             window_lock.store(false, Ordering::Release);
         };
 
-        self.num_frames += if self.num_frames == 500 {0} else {1};
+        //self.num_frames += if self.num_frames == 500 {0} else {1};
+        self.num_frames += 1;//if self.num_frames == 500 {0} else {1};
         let read_state = self.shared_scene_read_state.read();
 
-        for j in (self.start_xy.1..self.end_xy.1).rev() {
+        for (row_idx, j) in (self.start_xy.1..self.end_xy.1).rev().enumerate() {
 
             let stride = (self.num_pixels_xy.0 * 3) as usize;
 
             let start = (self.start_xy.0 * 3 + j * self.image_size.0 * 3) as usize;
             let dest_buffer_row_slice = &mut self.shared_scene_write_state.buffer.write()[start..start + stride];
 
-            let row_offset = stride * (j - self.start_xy.1) as usize;
+            let row_offset = stride * row_idx as usize;
             let mut buffer_offset = row_offset;
 
-            for (idx, i) in (self.start_xy.0..self.end_xy.0).enumerate() {
+            for (col_idx, i) in (self.start_xy.0..self.end_xy.0).enumerate() {
 
-                // TODO(SS): Use random sampling - Not working properly
-                //if !REALTIME {
-                //    if random::rand() > 0.5 {
-                //        continue;
-                //    }
-                //}
+                if REALTIME && random::rand() < CHANCE_TO_SKIP_PER_FRAME {
+                    continue;
+                }
+
+                let local_pixel_idx = row_idx * self.num_pixels_xy.0 as usize + col_idx;
+                //self.num_frames_per_pixel[local_pixel_idx] += 1;
+                self.num_frames_per_pixel[local_pixel_idx] += if self.num_frames_per_pixel[local_pixel_idx] <= 1000 {1} else {0};
 
                 let mut col = Vec3::new_zero_vector();
                 for _ in 0..self.num_samples {
@@ -143,10 +150,11 @@ impl TraceSceneBatchJob {
 
                 col = col / self.num_samples as f64;
 
-                let weight = 1.0 / self.num_frames as f32;
+                let num_frames = self.num_frames_per_pixel[local_pixel_idx];
+                let weight = 1.0 / num_frames as f32;
                 let one_minus_weight: f32 = 1.0 - weight;
 
-                let index = idx*3 as usize;
+                let index = col_idx*3 as usize;
                 if REALTIME {
                     dest_buffer_row_slice[index]     = (col.z as f32) * weight + dest_buffer_row_slice[index    ] * one_minus_weight;
                     dest_buffer_row_slice[index + 1] = (col.y as f32) * weight + dest_buffer_row_slice[index + 1] * one_minus_weight;
@@ -183,6 +191,7 @@ impl TraceSceneBatchJob {
                 update_window_and_release_lock(&mut self.local_buffer_u8, &read_state.window, self.image_start_xy, self.num_pixels_xy, &self.shared_scene_write_state.window_lock);
             }
         }
+        
 
         // notify completion by decrementing task counter
         self.shared_scene_write_state.remaining_tasks.fetch_sub(1, Ordering::SeqCst);

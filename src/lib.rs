@@ -533,7 +533,7 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> 
     // TODO
     const MOVING_SPHERES: bool = false;
 
-    if true {
+    if false {
         for a in -11..11 {
             for b in -11..11 {
                 let choose_mat = random::rand();
