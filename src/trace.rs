@@ -105,7 +105,7 @@ impl TraceSceneBatchJob {
             window_lock.store(false, Ordering::Release);
         };
 
-        self.num_frames += if self.num_frames == 10 {0} else {1};
+        self.num_frames += if self.num_frames == 500 {0} else {1};
         let read_state = self.shared_scene_read_state.read();
 
         for j in (self.start_xy.1..self.end_xy.1).rev() {
