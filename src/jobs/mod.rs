@@ -1,6 +1,7 @@
 use std::thread;
 use std::thread::JoinHandle;
-use std::sync::{Arc, RwLock, Condvar, Mutex};
+use std::sync::Arc;
+use parking_lot::{RwLock, Condvar, Mutex};
 use std::collections::VecDeque;
 use lazy_static::lazy_static;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -48,15 +49,15 @@ impl JobCounter {
     }
 
     fn decrement(&self) {
-        let counter = self.counter.lock().unwrap();
+        let counter = self.counter.lock();
         counter.fetch_sub(1, Ordering::SeqCst);
         self.condvar.notify_one();
     }
 
     fn wake_on_value(&self, value: usize)  {
-        let mut counter = self.counter.lock().unwrap();
+        let mut counter = self.counter.lock();
         while counter.compare_and_swap(value, 1, Ordering::Acquire) != value {
-            counter = self.condvar.wait(counter).unwrap();
+            self.condvar.wait(&mut counter);
         }
     }
 }
@@ -134,7 +135,7 @@ impl JobDescriptor {
     }
 
     fn run(&self) {
-        self.job.write().unwrap().run();
+        self.job.write().run();
     }
 }
 
@@ -152,17 +153,17 @@ impl JobQueue {
     }
 
     fn push(&self, descriptor: JobDescriptor) {
-        let mut queue = self.queue.write().unwrap();
+        let mut queue = self.queue.write();
         queue.push_back(descriptor);
     }
 
     fn pop(&self) -> Option<JobDescriptor> {
-        let mut queue = self.queue.write().unwrap();
+        let mut queue = self.queue.write();
         queue.pop_front()
     }
 
     fn is_empty(&self) -> bool {
-        let queue = self.queue.read().unwrap();
+        let queue = self.queue.read();
         queue.is_empty()
     }
 }
@@ -175,7 +176,7 @@ struct JobThreadHandle {
 
 impl JobThreadHandle {
     pub fn stop(&self) {
-        *self.is_running.write().unwrap() = false;
+        *self.is_running.write() = false;
     }
 
     pub fn join(self) {
@@ -197,7 +198,7 @@ impl ThreadWakeEvent {
 
     fn wake_threads(&self) {
         let &(ref lock, ref condvar) = &*self.value;
-        let mut wake = lock.lock().unwrap();
+        let mut wake = lock.lock();
         *wake = true;
         condvar.notify_all();
     }
@@ -205,7 +206,7 @@ impl ThreadWakeEvent {
     fn sleep_thread(&self) {
         let &(ref lock, ref condvar) = &*self.value;
         // sleep on event, this may wake spuriously but we don't really care
-        let _unused = condvar.wait(lock.lock().unwrap()).unwrap();
+        condvar.wait(&mut lock.lock());
     }
 }
 
@@ -241,7 +242,7 @@ impl JobThread {
         
         const SPINS_BEFORE_SLEEP: i32 = 20;
         let mut spins = 0;
-        while *self.is_running.read().unwrap() {
+        while *self.is_running.read() {
             match self.queue.pop() {
                 Some(job_descriptor) => {
                     job_descriptor.run();

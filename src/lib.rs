@@ -3,8 +3,9 @@ use std::fs::File;
 use std::io::Write;
 use std::f64;
 use std::time::{Instant, Duration};
-use std::sync::{Mutex, Arc, RwLock};
+use parking_lot::{RwLock, Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::rc::Rc;
 
@@ -20,8 +21,7 @@ use winit_utils::*;
 extern crate num_cpus;
 extern crate lazy_static;
 
-//extern crate rayon;
-//use rayon::prelude::*;
+extern crate parking_lot;
 
 // module imports
 mod math;
@@ -86,12 +86,12 @@ pub fn run() {
 
     let buffer_size_bytes = (nx*ny*3) as usize;
     let bgr_texture = Mutex::new(vec![0_u8; buffer_size_bytes]);
-    update_window_framebuffer(&window, &mut bgr_texture.lock().unwrap(), image_size);
+    update_window_framebuffer(&window, &mut bgr_texture.lock(), image_size);
 
     let num_cores = num_cpus::get();
     println!("Running on {} cores", num_cores);
 
-    let task_dim_xy = (120, 120);
+    let task_dim_xy = (60, 60);
     // sanitize so num tasks divides exactly into image
     let task_dim_xy = (round_down_to_closest_factor(task_dim_xy.0, nx), round_down_to_closest_factor(task_dim_xy.1, ny));
     let num_tasks_xy = (nx / task_dim_xy.0, ny / task_dim_xy.1);
@@ -162,11 +162,11 @@ pub fn run() {
         // stats
         let duration = start_timer.elapsed();
         let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
-        update_window_title_status(&scene_state.read().unwrap().window, &format!("Done.. in {}s.", duration_in_secs));
+        update_window_title_status(&scene_state.read().window, &format!("Done.. in {}s.", duration_in_secs));
 
         // write image 
         let image_file_name = "output.ppm";
-        save_bgr_texture_as_ppm(image_file_name, &scene_output.buffer.lock().unwrap(), image_size);
+        save_bgr_texture_as_ppm(image_file_name, &scene_output.buffer.lock(), image_size);
 
         events_loop.run_forever(|event| {
             use winit::VirtualKeyCode;
@@ -181,7 +181,7 @@ pub fn run() {
                     }
                     WindowEvent::CloseRequested => winit::ControlFlow::Break,
                     WindowEvent::Resized(..) => {
-                        update_window_framebuffer(&scene_state.read().unwrap().window, &mut scene_output.buffer.lock().unwrap(), image_size);
+                        update_window_framebuffer(&scene_state.read().window, &mut scene_output.buffer.lock(), image_size);
                         ControlFlow::Continue
                     },
                     _ => ControlFlow::Continue,
@@ -234,7 +234,7 @@ pub fn run() {
 
             // App logic - modifying of shared state allowed
             {
-                let mut scene_state_writable = scene_state.write().unwrap();
+                let mut scene_state_writable = scene_state.write();
 
                 let dpi = scene_state_writable.window.get_current_monitor().get_hidpi_factor();
 
@@ -279,7 +279,7 @@ pub fn run() {
                                 mouse_y = -physical_position.y;
                             },
                             WindowEvent::CloseRequested => keep_running = false,
-                            WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut scene_output.buffer.lock().unwrap(), image_size),
+                            WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut scene_output.buffer.lock(), image_size),
                             _ => {},
                         },
                         _ => {},
@@ -397,7 +397,7 @@ pub fn run() {
 
                     if camera_moved {
                         cam.update();
-                        batches.iter().for_each(|batch| batch.write().unwrap().clear_buffer());
+                        batches.iter().for_each(|batch| batch.write().clear_buffer());
                     }
                 }
             }
@@ -405,9 +405,9 @@ pub fn run() {
             let job_counter = Jobs::dispatch_jobs(&jobs);
             Jobs::wait_for_counter(&job_counter, 0);
 
-            let scene_state_writable = scene_state.read().unwrap();
+            let scene_state_writable = scene_state.read();
 
-            update_window_framebuffer(&scene_state_writable.window, &mut scene_output.buffer.lock().unwrap(), image_size);
+            update_window_framebuffer(&scene_state_writable.window, &mut scene_output.buffer.lock(), image_size);
 
             // throttle main thread to 60fps
             const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
@@ -426,7 +426,7 @@ pub fn run() {
 
         // write image 
         let image_file_name = "output.ppm";
-        save_bgr_texture_as_ppm(image_file_name, &scene_output.buffer.lock().unwrap(), image_size);
+        save_bgr_texture_as_ppm(image_file_name, &scene_output.buffer.lock(), image_size);
     }
 }
 
@@ -513,7 +513,7 @@ fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
     // TODO
     //const MOVING_SPHERES: bool = false;
 
-    if false {
+    if true {
     for a in -11..11 {
         for b in -11..11 {
             let choose_mat = random::rand();
@@ -578,9 +578,9 @@ fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
     }
     }
 
-  //  list.push(Arc::new(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0,Arc::new(Dielectric::new(1.5)))));
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0,Arc::new(Dielectric::new(1.5)))));
     list.push(Arc::new(Sphere::new(Vec3::new(-4.0, 1.0, 0.0), 1.0,Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.4, 0.2, 0.1))))))));
-  //  list.push(Arc::new(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0,Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)))));
+    list.push(Arc::new(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0,Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)))));
 
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }

@@ -1,5 +1,6 @@
 use std::f64;
-use std::sync::{Mutex, Arc, RwLock};
+use std::sync::Arc;
+use parking_lot::{RwLock,  Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use math::*;
@@ -11,7 +12,7 @@ use jobs::JobTask;
 
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
-pub const REALTIME: bool = true;
+pub const REALTIME: bool = false;
 const ENABLE_RENDER: bool = true && !REALTIME;
 
 pub struct SceneOutput {
@@ -101,7 +102,7 @@ impl TraceSceneBatchJob {
         };
 
         self.num_frames += if self.num_frames == 10 {0} else {1};
-        let read_state = self.shared_scene_read_state.read().unwrap();
+        let read_state = self.shared_scene_read_state.read();
 
         for j in (self.start_xy.1..self.end_xy.1).rev() {
 
@@ -174,7 +175,7 @@ impl TraceSceneBatchJob {
                 } else {
                     src_buffer = &self.local_buffer_u8[row_offset..row_offset + stride]
                 }
-                let mut buffer_mutex = self.shared_scene_write_state.buffer.lock().unwrap();
+                let mut buffer_mutex = self.shared_scene_write_state.buffer.lock();
                 let start = (self.start_xy.0 * 3 + j * self.image_size.0 * 3) as usize;
                 let dest_buffer = &mut buffer_mutex[start..start + stride];
                 dest_buffer.copy_from_slice(src_buffer);
