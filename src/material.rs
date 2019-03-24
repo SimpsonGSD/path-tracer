@@ -40,6 +40,7 @@ fn schlick(cosine: f64, ref_idx: f64) -> f64 {
 pub trait Material {
     // TODO(SS): return struct ray and attenuation so it's more obvious what these are
     fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Ray, Vec3)>; 
+    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3;
 }
 
 pub struct Dielectric {
@@ -90,6 +91,11 @@ impl Material for Dielectric {
 
         Some((scattered, attenuation))
     }
+
+    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
+        Vec3::from_float(0.0)
+    }
+
 }
 
 pub struct Metal {
@@ -120,16 +126,22 @@ impl Material for Metal{
             None
         }
     }
+
+    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
+        Vec3::from_float(0.0)
+    }
 }
 
 pub struct Lambertian {
-    albedo: Arc<Texture + Send + Sync + 'static>
+    albedo: Arc<Texture + Send + Sync + 'static>,
+    emissive: f64
 }
 
 impl Lambertian {
-    pub fn new(albedo: Arc<Texture + Send + Sync + 'static>) -> Lambertian {
+    pub fn new(albedo: Arc<Texture + Send + Sync + 'static>, emissive: f64) -> Lambertian {
         Lambertian {
-            albedo
+            albedo,
+            emissive
         }
     }
 }
@@ -138,7 +150,11 @@ impl Material for Lambertian{
     fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Ray, Vec3)> {
         let target = &rec.p + &rec.normal + random_in_unit_sphere();
         let scattered = Ray::new(rec.p.clone(), &target-&rec.p, r_in.time());
-        let attenuation = self.albedo.value(0.0, 0.0, &rec.p);
-        Some((scattered, attenuation.clone()))
+        let attenuation = if self.emissive > 0.0 { Vec3::from_float(0.0)} else {self.albedo.value(rec.u, rec.v, &rec.p).clone()};
+        Some((scattered, attenuation))
+    }
+
+    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
+        if self.emissive > 0.0 {self.albedo.value(u, v, point) * self.emissive} else {Vec3::from_float(0.0)}
     }
 }

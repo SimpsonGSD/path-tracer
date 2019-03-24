@@ -2,6 +2,7 @@ use math::*;
 use material::Material;
 use hitable::*;
 use std::sync::Arc;
+use std::f64::consts::{PI, FRAC_2_PI, FRAC_PI_2};
 
 pub struct Sphere {
     center: Vec3,
@@ -19,6 +20,14 @@ impl Sphere {
     }
 }
 
+fn get_sphere_uv(point: &Vec3) -> (f64, f64) {
+    let phi = point.z.atan2(point.x);
+    let theta = point.y.asin();
+    let u = 1.0 - (phi + PI) / (FRAC_2_PI);
+    let v = (theta + FRAC_PI_2) / PI;
+    (u, v)
+}
+
 impl Hitable for Sphere {
     fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
         // SS: A lot of 2s cancelled out here
@@ -32,8 +41,10 @@ impl Hitable for Sphere {
             let temp = (-b - (b*b-a*c).sqrt()) / a;
             if temp < t_max && temp > t_min {
                 let point = ray.point_at_parameter(temp);
+                let (u, v) = get_sphere_uv(&(&self.center - &point));
                 return Some(HitRecord::new(
                     temp,
+                    u, v,
                     point.clone(),
                     (point - &self.center) / self.radius,
                     Arc::clone(&self.material))
@@ -43,8 +54,10 @@ impl Hitable for Sphere {
             let temp = (-b + (b*b-a*c).sqrt()) / a;
             if temp < t_max && temp > t_min {
                 let point = ray.point_at_parameter(temp);
+                let (u, v) = get_sphere_uv(&(&self.center - &point));
                 return Some(HitRecord::new(
                     temp,
+                    u, v,
                     point.clone(),
                     (point - &self.center) / self.radius,
                     Arc::clone(&self.material))
@@ -106,8 +119,10 @@ impl Hitable for MovingSphere {
             let temp = (-b - (b*b-a*c).sqrt()) / a;
             if temp < t_max && temp > t_min {
                 let point = ray.point_at_parameter(temp);
+                let (u, v) = get_sphere_uv(&(&center - &point));
                 return Some(HitRecord::new(
                     temp,
+                    u, v,
                     point.clone(),
                     (point - &center) / self.radius,
                     Arc::clone(&self.material))
@@ -117,8 +132,10 @@ impl Hitable for MovingSphere {
             let temp = (-b + (b*b-a*c).sqrt()) / a;
             if temp < t_max && temp > t_min {
                 let point = ray.point_at_parameter(temp);
+                let (u, v) = get_sphere_uv(&(&center - &point));
                 return Some(HitRecord::new(
                     temp,
+                    u, v,
                     point.clone(),
                     (point - &center) / self.radius,
                     Arc::clone(&self.material))

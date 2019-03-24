@@ -47,6 +47,14 @@ use jobs::{Jobs, JobTask, MultiSliceReadWriteLock};
 // For tracking multithreading bugs
 const RUN_SINGLE_THREADED: bool = false;
 
+fn reinhard_tonemap(colour: &Vec3) -> Vec3 {
+    let luminance: Vec3 = Vec3::new(0.2126, 0.7152, 0.0722);
+    static EXPOSURE: f64 = 1.0;
+    let colour = colour * EXPOSURE;
+    //&colour / (vec3::dot(&colour, &luminance) + 1.0)
+    &colour / (&colour + 1.0)
+}
+
 pub fn run() {
 
     let nx: u32 = 1280;
@@ -81,11 +89,17 @@ pub fn run() {
    // let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
     let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0);
 
-    // TODO(SS): This is temporary and will be handled by the GPU
+    // TODO(SS): This is temporary and will be handled by the GPU. Tonemap, gamma and convert to uint.
     let convert_to_u8_and_gamma_correct = |buffer: &Vec<f32>| -> Vec<u8>{
-        buffer.iter().map(|x| {
-            (255.99*x.sqrt()) as u8
-        }).collect()
+        let mut output = Vec::with_capacity(buffer.len());
+         buffer.chunks(3).map(|chunk| {
+            let colour = Vec3::new(chunk[2] as f64,chunk[1] as f64,chunk[0] as f64);
+            reinhard_tonemap(&colour)
+        }).for_each(|colour|{   output.push((255.99 * colour.z.sqrt()) as u8);
+                                output.push((255.99 * colour.y.sqrt()) as u8);
+                                output.push((255.99 * colour.x.sqrt()) as u8);});
+
+        output
     };
 
 
@@ -484,8 +498,8 @@ fn save_bgr_texture_as_ppm(filename: &str, bgr_buffer: &Vec<u8>, buffer_size: (u
 
 #[allow(dead_code)]
 fn two_spheres() -> Box<Hitable + Send + Sync + 'static> {
-    let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(1.0, 0.0, 0.0)))));
-    let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.0, 1.0)))));
+    let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(1.0, 0.0, 0.0))), 0.0));
+    let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.0, 1.0))), 0.0));
 
     let list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![
         Arc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
@@ -497,10 +511,10 @@ fn two_spheres() -> Box<Hitable + Send + Sync + 'static> {
 
 #[allow(dead_code)]
 fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
-    let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.0, 0.0)))));
-    let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.3, 0.3, 0.3)))));
-    let green_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.9, 0.0)))));
-    let yellow_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.0)))));
+    let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.0, 0.0))), 0.0));
+    let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.3, 0.3, 0.3))), 0.0));
+    let green_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.9, 0.0))), 0.0));
+    let yellow_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.0))), 0.0));
 
     let dielectric_material = Arc::new(Dielectric::new(1.6));
     let metal_material = Arc::new(Metal::new(Vec3::from_float(1.0), 0.0));
@@ -528,12 +542,12 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> 
 
     let mut list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![];
 
-    list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(checker_texture.clone())))));
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(checker_texture.clone(), 0.0)))));
 
     // TODO
     const MOVING_SPHERES: bool = false;
 
-    if false {
+    if true {
         for a in -11..11 {
             for b in -11..11 {
                 let choose_mat = random::rand();
@@ -541,10 +555,12 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> 
                 if (&center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
                     let material: Arc<Material + Send + Sync + 'static>;
                     if choose_mat < 0.6 { // diffuse 
+                        let is_emissive = random::rand() < 0.3;
+                        let emissive = if is_emissive {2.0 * random::rand()} else {0.0};
                         material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(
                                                         random::rand()*random::rand(), 
                                                         random::rand()*random::rand(), 
-                                                        random::rand()*random::rand())))));
+                                                        random::rand()*random::rand()))), emissive));
                                                 
 
                     } else if choose_mat < 0.8 { // metal
@@ -565,7 +581,7 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> 
     }
 
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0,Arc::new(Dielectric::new(1.5)))));
-    list.push(Arc::new(Sphere::new(Vec3::new(-4.0, 1.0, 0.0), 1.0,Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.4, 0.2, 0.1))))))));
+    list.push(Arc::new(Sphere::new(Vec3::new(-4.0, 1.0, 0.0), 1.0,Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.4, 0.2, 0.1))), 0.0)))));
     list.push(Arc::new(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0,Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)))));
 
     Box::new(BvhNode::from_list(list, t_min, t_max))

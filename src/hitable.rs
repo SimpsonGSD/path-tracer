@@ -4,15 +4,19 @@ use std::sync::Arc;
 
 pub struct HitRecord {
     pub t: f64,
+    pub u: f64,
+    pub v: f64,
     pub p: Vec3,
     pub normal: Vec3,
     pub mat: Arc<Material + Send + Sync + 'static>
 }
 
 impl HitRecord {
-    pub fn new(t: f64, p: Vec3, normal: Vec3, mat: Arc<Material + Send + Sync + 'static>) -> HitRecord {
+    pub fn new(t: f64, u: f64, v: f64, p: Vec3, normal: Vec3, mat: Arc<Material + Send + Sync + 'static>) -> HitRecord {
         HitRecord {
             t,
+            u,
+            v,
             p,
             normal, 
             mat,

@@ -15,7 +15,8 @@ use jobs::MultiSliceReadWriteLock;
 const RENDER_UPDATE_LATENCY: u32 = 20; 
 pub const REALTIME: bool = true;
 const ENABLE_RENDER: bool = true && !REALTIME;
-const CHANCE_TO_SKIP_PER_FRAME: f64 = 0.9;
+const CHANCE_TO_SKIP_PER_FRAME: f64 = 0.8;
+const SKY_BRIGHTNESS: f64 = 0.1;
 
 pub struct SceneOutput {
     pub buffer: MultiSliceReadWriteLock<Vec<f32>>,
@@ -207,16 +208,18 @@ impl JobTask for TraceSceneBatchJob {
 fn color(r : &Ray, world: &Box<Hitable + Send + Sync + 'static>, depth: i32, t_min: f64, t_max: f64) -> Vec3 {
     if let Some(hit_record) = world.hit(r, 0.001, f64::MAX) {
         if depth < 50 {
+            let emitted = hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p);
             if  let Some((scattered, attenuation)) =  hit_record.mat.scatter(r, &hit_record) {
-                return attenuation * color(&scattered, world, depth+1, 0.001, f64::MAX);
+                return emitted + attenuation * color(&scattered, world, depth+1, 0.001, f64::MAX);
             }
         }
         return Vec3::new_zero_vector();
     } else {
         let unit_dir = Vec3::new_unit_vector(&r.direction());
         let t = 0.5*(unit_dir.y + 1.0);
-        let white = Vec3::from_float(1.0);
-        let sky = Vec3::new(0.5, 0.7, 1.0);
+        let white = Vec3::from_float(SKY_BRIGHTNESS);
+        let sky = Vec3::new(0.5, 0.7, 1.0) * SKY_BRIGHTNESS;
         return lerp(&white, &sky, t);
+        //return Vec3::new(0.0, 0.0, 0.0);
     }
 }
