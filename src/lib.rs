@@ -39,7 +39,7 @@ use hitable::*;
 use camera::Camera;
 use texture::{ConstantTexture, CheckerTexture};
 use material::*;
-use sphere::Sphere;
+use sphere::{Sphere, MovingSphere};
 use bvh::BvhNode;
 use trace::*;
 use jobs::{Jobs, JobTask, MultiSliceReadWriteLock};
@@ -68,7 +68,7 @@ pub fn run() {
 
     //let world = two_spheres();
     //let world = four_spheres();
-    let world = random_scene();
+    let world = random_scene(0.0, 1000.0);
 
     let lookfrom = Vec3::new(0.0,4.0,13.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
@@ -100,14 +100,14 @@ pub fn run() {
     // sanitize so num tasks divides exactly into image
     let task_dim_xy = (round_down_to_closest_factor(task_dim_xy.0, nx), round_down_to_closest_factor(task_dim_xy.1, ny));
     let num_tasks_xy = (nx / task_dim_xy.0, ny / task_dim_xy.1);
+    let num_tasks = num_tasks_xy.0 * num_tasks_xy.1;
     let window_lock = AtomicBool::new(false);
-    let remaining_tasks = AtomicUsize::new((num_tasks_xy.0*num_tasks_xy.1) as usize);
+    let remaining_tasks = AtomicUsize::new((num_tasks) as usize);
 
-    update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks_xy.0 * num_tasks_xy.1));
+    update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks));
 
-    let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window)));
+    let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window, 0.0, 1.0/60.0)));
     let scene_output = Arc::new(SceneOutput::new(bgr_texture, remaining_tasks, window_lock));
-
 
     if !REALTIME {
         if !RUN_SINGLE_THREADED {
@@ -151,6 +151,10 @@ pub fn run() {
                 if scene_output.remaining_tasks.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
                     break;
                 }
+
+                let percent_done = ((num_tasks - scene_output.remaining_tasks.load(Ordering::Relaxed) as u32) as f32 / num_tasks as f32) * 100.0;
+                update_window_title_status(&scene_state.read().window, &format!("Tracing... {} tasks. {}% done", num_tasks, percent_done));
+
 
                 // yield thread
                 thread::sleep(Duration::from_secs(1));
@@ -220,7 +224,7 @@ pub fn run() {
         let mut keep_running = true;
         let mut fps = 0.0;
         let mut move_forward = false;
-        let mut frame_time = 0.1;
+        let mut frame_time = 1.0 / 60.0;
         let mut move_left = false;
         let mut move_right = false;
         let mut move_backward = false;
@@ -241,6 +245,10 @@ pub fn run() {
             // App logic - modifying of shared state allowed
             {
                 let mut scene_state_writable = scene_state.write();
+
+                // update time
+                scene_state_writable.time0 = scene_state_writable.time1;
+                scene_state_writable.time1 += frame_time;
 
                 let dpi = scene_state_writable.window.get_current_monitor().get_hidpi_factor();
 
@@ -414,9 +422,9 @@ pub fn run() {
             let job_counter = Jobs::dispatch_jobs(&jobs);
             Jobs::wait_for_counter(&job_counter, 0);
 
-            let scene_state_writable = scene_state.read();
+            let scene_state_readable = scene_state.read();
 
-            update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+            update_window_framebuffer(&scene_state_readable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
 
             // throttle main thread to 60fps
             const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
@@ -429,8 +437,9 @@ pub fn run() {
             
             let frame_duration = start_timer.elapsed();
             frame_time = frame_duration.as_secs() as f64 + frame_duration.subsec_nanos() as f64 * 1e-9;
+
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
-            scene_state_writable.window.set_title(&format!("Path Tracer: FPS = {}", fps as i32));
+            scene_state_readable.window.set_title(&format!("Path Tracer: FPS = {}", fps as i32));
         }
 
         // write image 
@@ -513,7 +522,7 @@ fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
 }
 
 #[allow(dead_code)]
-fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
+fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> {
     let checker_texture = Arc::new(CheckerTexture::new(Arc::new(ConstantTexture::new(Vec3::new(0.2, 0.3, 0.1))), 
                                                       Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.9)))));
 
@@ -522,76 +531,42 @@ fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(checker_texture.clone())))));
 
     // TODO
-    //const MOVING_SPHERES: bool = false;
+    const MOVING_SPHERES: bool = false;
 
     if true {
-    for a in -11..11 {
-        for b in -11..11 {
-            let choose_mat = random::rand();
-            let center = Vec3::new(a as f64 + 0.9 * random::rand(), 0.2, b as f64 + 0.9 * random::rand());
-            if (&center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
-                if choose_mat < 0.6 { // diffuse 
-                    list.push(
-                        Arc::new(
-                            Sphere::new(
-                                center.clone(), 
-                                0.2, 
-                                Arc::new(
-                                    Lambertian::new(
-                                        Arc::new(
-                                            ConstantTexture::new(
-                                                Vec3::new(
-                                                    random::rand()*random::rand(), 
-                                                    random::rand()*random::rand(), 
-                                                    random::rand()*random::rand()
-                                                )
-                                            )
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    );
+        for a in -11..11 {
+            for b in -11..11 {
+                let choose_mat = random::rand();
+                let center = Vec3::new(a as f64 + 0.9 * random::rand(), 0.2, b as f64 + 0.9 * random::rand());
+                if (&center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
+                    let material: Arc<Material + Send + Sync + 'static>;
+                    if choose_mat < 0.6 { // diffuse 
+                        material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(
+                                                        random::rand()*random::rand(), 
+                                                        random::rand()*random::rand(), 
+                                                        random::rand()*random::rand())))));
+                                                
 
-                } else if choose_mat < 0.8 { // metal
-                    list.push(
-                        Arc::new(
-                            Sphere::new(
-                                center.clone(), 
-                                0.2,
-                                Arc::new(
-                                    Metal::new(
-                                        Vec3::new(
-                                            0.5*(1.0+random::rand()),
-                                            0.5*(1.0+random::rand()),
-                                            0.5*(1.0+random::rand())),
-                                            0.2*random::rand()
-                                        )
-                                    )
-                                )
-                            )
-                        );
-                } else { // glass
-                    list.push(
-                        Arc::new(
-                            Sphere::new(
-                                center.clone(), 
-                                0.2,
-                                Arc::new(
-                                    Dielectric::new(1.5)
-                                )
-                            )
-                        )
-                    );
+                    } else if choose_mat < 0.8 { // metal
+                        material = Arc::new(Metal::new(Vec3::new(0.5*(1.0+random::rand()),0.5*(1.0+random::rand()),0.5*(1.0+random::rand())),
+                                                        0.2*random::rand()));
+                    } else { // glass
+                        material = Arc::new( Dielectric::new(1.5));
+                    }
+                    
+                    if MOVING_SPHERES {
+                        list.push(Arc::new(MovingSphere::new(center.clone(), &center+Vec3::new(0.0,0.5*random::rand(),0.0), 0.0, 1.0, 0.2, material)));
+                    } else {
+                        list.push(Arc::new(Sphere::new(center.clone(),0.2, material)));
+                    }
                 }
             }
         }
-    }
     }
 
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0,Arc::new(Dielectric::new(1.5)))));
     list.push(Arc::new(Sphere::new(Vec3::new(-4.0, 1.0, 0.0), 1.0,Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.4, 0.2, 0.1))))))));
     list.push(Arc::new(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0,Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)))));
 
-    Box::new(BvhNode::from_list(list, 0.0, 1.0))
+    Box::new(BvhNode::from_list(list, t_min, t_max))
 }

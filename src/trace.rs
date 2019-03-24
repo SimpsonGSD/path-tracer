@@ -13,7 +13,7 @@ use jobs::MultiSliceReadWriteLock;
 
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
-pub const REALTIME: bool = false;
+pub const REALTIME: bool = true;
 const ENABLE_RENDER: bool = true && !REALTIME;
 
 pub struct SceneOutput {
@@ -37,15 +37,19 @@ pub struct SceneState {
     pub cam: Camera,
     pub world: Box<Hitable + Send + Sync + 'static>,
     pub window: winit::Window,
+    pub time0: f64,
+    pub time1: f64,
 }
 
 impl SceneState {
-    pub fn new(cam: Camera, world: Box<Hitable + Send + Sync + 'static>, window: winit::Window) -> SceneState {
+    pub fn new(cam: Camera, world: Box<Hitable + Send + Sync + 'static>, window: winit::Window, time0: f64, time1: f64) -> SceneState {
             
         SceneState {
             cam,
             world,
             window,
+            time0,
+            time1
         }
     }
 }
@@ -131,7 +135,7 @@ impl TraceSceneBatchJob {
                     let v: f64 = ((j as f64) + random) / (self.image_size.1 as f64);
 
                     let r = read_state.cam.get_ray(u, v);
-                    col += color(&r, &read_state.world, 0);
+                    col += color(&r, &read_state.world, 0, read_state.time0, read_state.time1);
 
                     // SS: Debug uv image
                     // col += Vec3::new(u, v, 0.0);
@@ -167,14 +171,14 @@ impl TraceSceneBatchJob {
                 }
             }
 
-            if ENABLE_RENDER && j % RENDER_UPDATE_LATENCY == 0 && self.shared_scene_write_state.window_lock.compare_and_swap(false, true, Ordering::Acquire)  {
+            if ENABLE_RENDER && j % RENDER_UPDATE_LATENCY == 0 && self.shared_scene_write_state.window_lock.compare_and_swap(false, true, Ordering::Acquire) {
                 // Update frame buffer to show progress
                 update_window_and_release_lock(&mut self.local_buffer_u8, &read_state.window, self.image_start_xy, self.num_pixels_xy, &self.shared_scene_write_state.window_lock);
             }
         }
 
         if ENABLE_RENDER {
-            while self.shared_scene_write_state.window_lock.compare_and_swap(false, true, Ordering::Acquire)  {
+            while self.shared_scene_write_state.window_lock.compare_and_swap(false, true, Ordering::Acquire) {
                 // Update frame buffer to show progress
                 update_window_and_release_lock(&mut self.local_buffer_u8, &read_state.window, self.image_start_xy, self.num_pixels_xy, &self.shared_scene_write_state.window_lock);
             }
@@ -191,11 +195,11 @@ impl JobTask for TraceSceneBatchJob {
     }
 }
 
-fn color(r : &Ray, world: &Box<Hitable + Send + Sync + 'static>, depth: i32) -> Vec3 {
+fn color(r : &Ray, world: &Box<Hitable + Send + Sync + 'static>, depth: i32, t_min: f64, t_max: f64) -> Vec3 {
     if let Some(hit_record) = world.hit(r, 0.001, f64::MAX) {
         if depth < 50 {
             if  let Some((scattered, attenuation)) =  hit_record.mat.scatter(r, &hit_record) {
-                return attenuation * color(&scattered, world, depth+1);
+                return attenuation * color(&scattered, world, depth+1, 0.001, f64::MAX);
             }
         }
         return Vec3::new_zero_vector();
