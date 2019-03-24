@@ -1,6 +1,6 @@
 use std::f64;
 use std::sync::Arc;
-use parking_lot::{RwLock,  Mutex};
+use parking_lot::{RwLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use math::*;
@@ -9,6 +9,7 @@ use camera::Camera;
 use winit_utils::*;
 
 use jobs::JobTask;
+use jobs::MultiSliceReadWriteLock;
 
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
@@ -16,13 +17,13 @@ pub const REALTIME: bool = false;
 const ENABLE_RENDER: bool = true && !REALTIME;
 
 pub struct SceneOutput {
-    pub buffer: Mutex<Vec<u8>>,
+    pub buffer: MultiSliceReadWriteLock<Vec<f32>>,
     pub window_lock: AtomicBool, 
     pub remaining_tasks: AtomicUsize,
 }
 
 impl SceneOutput {
-    pub fn new(buffer: Mutex<Vec<u8>>, remaining_tasks: AtomicUsize, window_lock: AtomicBool) -> SceneOutput {
+    pub fn new(buffer: MultiSliceReadWriteLock<Vec<f32>>, remaining_tasks: AtomicUsize, window_lock: AtomicBool) -> SceneOutput {
             
         SceneOutput {
             buffer,
@@ -57,7 +58,6 @@ pub struct TraceSceneBatchJob {
     num_pixels_xy: (u32, u32),
     image_start_xy: (u32, u32),
     local_buffer_u8: Vec<u8>,
-    local_buffer_f32: Vec<f32>,
     shared_scene_read_state: Arc<RwLock<SceneState>>,
     shared_scene_write_state: Arc<SceneOutput>,
     num_frames: i32,
@@ -77,7 +77,6 @@ impl TraceSceneBatchJob {
             num_pixels_xy,
             image_start_xy,
             local_buffer_u8: if !REALTIME {vec![0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize]} else {vec![]},
-            local_buffer_f32: if REALTIME {vec![0.0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize]} else {vec![]},
             shared_scene_read_state,
             shared_scene_write_state,
             num_frames: 0
@@ -86,11 +85,12 @@ impl TraceSceneBatchJob {
 
     pub fn clear_buffer(&mut self) {
         self.num_frames = 0;
-        if REALTIME {
-            self.local_buffer_f32 = vec![0.0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
-        } else {
+        if !REALTIME {
             self.local_buffer_u8 = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
-        }
+        } 
+        //else {
+       //     self.local_buffer_f32 = vec![0.0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
+       // }
     }
 
     fn trace(&mut self) {
@@ -107,10 +107,14 @@ impl TraceSceneBatchJob {
         for j in (self.start_xy.1..self.end_xy.1).rev() {
 
             let stride = (self.num_pixels_xy.0 * 3) as usize;
+
+            let start = (self.start_xy.0 * 3 + j * self.image_size.0 * 3) as usize;
+            let dest_buffer_row_slice = &mut self.shared_scene_write_state.buffer.write()[start..start + stride];
+
             let row_offset = stride * (j - self.start_xy.1) as usize;
             let mut buffer_offset = row_offset;
 
-            for i in self.start_xy.0..self.end_xy.0 {
+            for (idx, i) in (self.start_xy.0..self.end_xy.0).enumerate() {
 
                 // TODO(SS): Use random sampling - Not working properly
                 //if !REALTIME {
@@ -138,19 +142,17 @@ impl TraceSceneBatchJob {
                 let weight = 1.0 / self.num_frames as f32;
                 let one_minus_weight: f32 = 1.0 - weight;
 
+                let index = idx*3 as usize;
                 if REALTIME {
-                    self.local_buffer_f32[buffer_offset]  = (col.z as f32) * weight + self.local_buffer_f32[buffer_offset] * one_minus_weight;
-                    buffer_offset += 1;
-                    self.local_buffer_f32[buffer_offset]  = (col.y as f32) * weight + self.local_buffer_f32[buffer_offset] * one_minus_weight;
-                    buffer_offset += 1;
-                    self.local_buffer_f32[buffer_offset]  = (col.x as f32) * weight + self.local_buffer_f32[buffer_offset] * one_minus_weight;
-                    buffer_offset += 1;
+                    dest_buffer_row_slice[index]     = (col.z as f32) * weight + dest_buffer_row_slice[index    ] * one_minus_weight;
+                    dest_buffer_row_slice[index + 1] = (col.y as f32) * weight + dest_buffer_row_slice[index + 1] * one_minus_weight;
+                    dest_buffer_row_slice[index + 2] = (col.x as f32) * weight + dest_buffer_row_slice[index + 2] * one_minus_weight;
                 } else {
-                    col = Vec3::new(col.x.sqrt(), col.y.sqrt(), col.z.sqrt()); // Gamma correct 1/2.0
 
-                    let ir = (255.99*col.r()) as u8;
-                    let ig = (255.99*col.g()) as u8;
-                    let ib = (255.99*col.b()) as u8;
+                    // Gamma correct 1/2.0 and convert to u8
+                    let ir = (255.99*col.x.sqrt()) as u8;
+                    let ig = (255.99*col.y.sqrt()) as u8;
+                    let ib = (255.99*col.z.sqrt()) as u8;
                     
                     self.local_buffer_u8[buffer_offset]  = ib;
                     buffer_offset += 1;
@@ -158,28 +160,12 @@ impl TraceSceneBatchJob {
                     buffer_offset += 1;
                     self.local_buffer_u8[buffer_offset]  = ir;
                     buffer_offset += 1;
+
+                    dest_buffer_row_slice[index] = col.b() as f32;
+                    dest_buffer_row_slice[index + 1] = col.g() as f32;
+                    dest_buffer_row_slice[index + 2] = col.r() as f32;
                 }
             }
-
-            // copy 1 row of our local buffer into correct slice of image buffer.
-            {
-                let u8_buffer: Vec<u8>;
-                let src_buffer;
-                if REALTIME { 
-                    // for now gamma correct and convert to u8.
-                    // TODO(SS): This will be done in shader
-                    u8_buffer = self.local_buffer_f32[row_offset..row_offset + stride].iter().map(|x| {
-                        (255.99*x.sqrt()) as u8
-                    }).collect();
-                   src_buffer = &u8_buffer[..];
-                } else {
-                    src_buffer = &self.local_buffer_u8[row_offset..row_offset + stride]
-                }
-                let mut buffer_mutex = self.shared_scene_write_state.buffer.lock();
-                let start = (self.start_xy.0 * 3 + j * self.image_size.0 * 3) as usize;
-                let dest_buffer = &mut buffer_mutex[start..start + stride];
-                dest_buffer.copy_from_slice(src_buffer);
-            } // buffer_mutex is released here 
 
             if ENABLE_RENDER && j % RENDER_UPDATE_LATENCY == 0 && self.shared_scene_write_state.window_lock.compare_and_swap(false, true, Ordering::Acquire)  {
                 // Update frame buffer to show progress

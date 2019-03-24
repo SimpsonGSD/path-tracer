@@ -5,6 +5,7 @@ use parking_lot::{RwLock, Condvar, Mutex};
 use std::collections::VecDeque;
 use lazy_static::lazy_static;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::UnsafeCell;
 
 lazy_static! {
     static ref THREAD_POOL: ThreadPool = ThreadPool::new();
@@ -265,34 +266,30 @@ impl JobThread {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[derive(Clone)]
+pub struct MultiSliceReadWriteLock<T> {
 
-    pub struct PrintJob1 {
-        value: String
+    data: Arc<UnsafeCell<T>>
+}
+
+unsafe impl<T> Send for MultiSliceReadWriteLock<T> {}
+unsafe impl<T> Sync for MultiSliceReadWriteLock<T> {}
+
+impl<T> MultiSliceReadWriteLock<T> {
+    
+    pub fn new(data: T) -> MultiSliceReadWriteLock<T> {
+        MultiSliceReadWriteLock {
+            data: Arc::new(UnsafeCell::new(data))
+        }    
     }
-
-    impl JobTask for PrintJob1 {
-        fn run(&self) {
-            println!("{}", self.value);
-        }
+    
+    pub fn write(&self) -> &mut T {
+        // TODO(SS): Ensure no one else can grab reference to same slice twice
+        unsafe {  &mut *self.data.get() }
     }
-    #[test]
-    fn test() {
-
-        for i in 0..40 {
-            let job = PrintJob1{value: format!("1st job batch: index {}", i)};
-            Jobs::dispatch_job(JobDescriptor::new(Box::new(job)));
-        }
-        Jobs::wait_for_outstanding_jobs();
-
-        println!("Next set of jobs incoming..");
-
-        for i in 0..40 {
-            let job = PrintJob1{value: format!("2nd job batch: index {}", i)};
-            Jobs::dispatch_job(JobDescriptor::new(Box::new(job)));
-        }
-        Jobs::wait_for_outstanding_jobs();
+    
+    pub fn read(&self) -> &T {
+        // TODO(SS): Ensure no one can read when write is checked out?
+        unsafe {  & *self.data.get() }
     }
 }

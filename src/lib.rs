@@ -3,11 +3,10 @@ use std::fs::File;
 use std::io::Write;
 use std::f64;
 use std::time::{Instant, Duration};
-use parking_lot::{RwLock, Condvar, Mutex};
+use parking_lot::{RwLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
-use std::rc::Rc;
 
 // 3rd party crate imports
 #[cfg(target_os = "windows")]
@@ -43,7 +42,7 @@ use material::*;
 use sphere::Sphere;
 use bvh::BvhNode;
 use trace::*;
-use jobs::{Jobs, JobTask, JobDescriptor};
+use jobs::{Jobs, JobTask, MultiSliceReadWriteLock};
 
 // For tracking multithreading bugs
 const RUN_SINGLE_THREADED: bool = false;
@@ -82,16 +81,22 @@ pub fn run() {
    // let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
     let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0);
 
+    // TODO(SS): This is temporary and will be handled by the GPU
+    let convert_to_u8_and_gamma_correct = |buffer: &Vec<f32>| -> Vec<u8>{
+        buffer.iter().map(|x| {
+            (255.99*x.sqrt()) as u8
+        }).collect()
+    };
 
 
     let buffer_size_bytes = (nx*ny*3) as usize;
-    let bgr_texture = Mutex::new(vec![0_u8; buffer_size_bytes]);
-    update_window_framebuffer(&window, &mut bgr_texture.lock(), image_size);
+    let bgr_texture = MultiSliceReadWriteLock::new(vec![0.0_f32; buffer_size_bytes]);
+    update_window_framebuffer(&window, &mut convert_to_u8_and_gamma_correct(bgr_texture.read()), image_size);
 
     let num_cores = num_cpus::get();
     println!("Running on {} cores", num_cores);
 
-    let task_dim_xy = (60, 60);
+    let task_dim_xy = (120, 120);
     // sanitize so num tasks divides exactly into image
     let task_dim_xy = (round_down_to_closest_factor(task_dim_xy.0, nx), round_down_to_closest_factor(task_dim_xy.1, ny));
     let num_tasks_xy = (nx / task_dim_xy.0, ny / task_dim_xy.1);
@@ -102,6 +107,7 @@ pub fn run() {
 
     let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window)));
     let scene_output = Arc::new(SceneOutput::new(bgr_texture, remaining_tasks, window_lock));
+
 
     if !REALTIME {
         if !RUN_SINGLE_THREADED {
@@ -166,7 +172,7 @@ pub fn run() {
 
         // write image 
         let image_file_name = "output.ppm";
-        save_bgr_texture_as_ppm(image_file_name, &scene_output.buffer.lock(), image_size);
+        save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
 
         events_loop.run_forever(|event| {
             use winit::VirtualKeyCode;
@@ -181,7 +187,7 @@ pub fn run() {
                     }
                     WindowEvent::CloseRequested => winit::ControlFlow::Break,
                     WindowEvent::Resized(..) => {
-                        update_window_framebuffer(&scene_state.read().window, &mut scene_output.buffer.lock(), image_size);
+                        update_window_framebuffer(&scene_state.read().window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
                         ControlFlow::Continue
                     },
                     _ => ControlFlow::Continue,
@@ -241,7 +247,7 @@ pub fn run() {
                 // TODO(SS): debouncing, needs moving to struct
                 let mouse_x_last_frame = mouse_x;
                 let mouse_y_last_frame = mouse_y;
-                let left_mouse_down_last_frame = left_mouse_down;
+                let _left_mouse_down_last_frame = left_mouse_down;
                 let right_mouse_down_last_frame = right_mouse_down;
 
                 events_loop.poll_events(|event| {
@@ -279,7 +285,7 @@ pub fn run() {
                                 mouse_y = -physical_position.y;
                             },
                             WindowEvent::CloseRequested => keep_running = false,
-                            WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut scene_output.buffer.lock(), image_size),
+                            WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size),
                             _ => {},
                         },
                         _ => {},
@@ -398,6 +404,9 @@ pub fn run() {
                     if camera_moved {
                         cam.update();
                         batches.iter().for_each(|batch| batch.write().clear_buffer());
+                        let buffer = scene_output.buffer.write();
+                        *buffer = vec![0.0_f32; buffer_size_bytes];
+
                     }
                 }
             }
@@ -407,7 +416,7 @@ pub fn run() {
 
             let scene_state_writable = scene_state.read();
 
-            update_window_framebuffer(&scene_state_writable.window, &mut scene_output.buffer.lock(), image_size);
+            update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
 
             // throttle main thread to 60fps
             const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
@@ -426,7 +435,7 @@ pub fn run() {
 
         // write image 
         let image_file_name = "output.ppm";
-        save_bgr_texture_as_ppm(image_file_name, &scene_output.buffer.lock(), image_size);
+        save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
     }
 }
 
@@ -477,6 +486,7 @@ fn two_spheres() -> Box<Hitable + Send + Sync + 'static> {
     Box::new(HitableList::new(list))
 }
 
+#[allow(dead_code)]
 fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
     let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.0, 0.0)))));
     let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.3, 0.3, 0.3)))));
@@ -502,6 +512,7 @@ fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
     //Box::new(HitableList::new(list))
 }
 
+#[allow(dead_code)]
 fn random_scene() -> Box<Hitable + Send + Sync + 'static> {
     let checker_texture = Arc::new(CheckerTexture::new(Arc::new(ConstantTexture::new(Vec3::new(0.2, 0.3, 0.1))), 
                                                       Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.9)))));
