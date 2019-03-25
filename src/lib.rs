@@ -46,6 +46,7 @@ use jobs::{Jobs, JobTask, MultiSliceReadWriteLock};
 
 // For tracking multithreading bugs
 const RUN_SINGLE_THREADED: bool = false;
+const OUTPUT_IMAGE_ON_CLOSE: bool = false;
 
 fn reinhard_tonemap(colour: &Vec3) -> Vec3 {
     let luminance: Vec3 = Vec3::new(0.2126, 0.7152, 0.0722);
@@ -482,8 +483,10 @@ pub fn run() {
         }
 
         // write image 
-        let image_file_name = "output.ppm";
-        save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+        if OUTPUT_IMAGE_ON_CLOSE {
+            let image_file_name = "output.ppm";
+            save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+        }
     }
 }
 

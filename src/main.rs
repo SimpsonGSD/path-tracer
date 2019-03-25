@@ -1,5 +1,5 @@
-extern crate ray_tracer;
+extern crate path_tracer;
 
 fn main() {
-    ray_tracer::run();
+    path_tracer::run();
 }
