@@ -216,7 +216,7 @@ pub fn run() {
 
     } else  {
     
-        let controls_string = "(Controls: O/P - Decrease/Increase Sky Brightness;  B - Toggle Emissive)";
+        let controls_string = "Controls: O/P - Decrease/Increase Sky Brightness;  B - Toggle Emissive";
 
         let mut batches = vec![];
         let mut jobs: Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>>  = vec![];

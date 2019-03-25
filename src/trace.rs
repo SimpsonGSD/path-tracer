@@ -14,7 +14,7 @@ use jobs::MultiSliceReadWriteLock;
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
 pub const REALTIME: bool = true;
-const ENABLE_RENDER: bool = true && !REALTIME;
+const ENABLE_RENDER: bool = false && !REALTIME;
 const CHANCE_TO_SKIP_PER_FRAME: f64 = 0.8;
 
 pub struct SceneOutput {
