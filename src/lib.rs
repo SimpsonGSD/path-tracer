@@ -120,7 +120,7 @@ pub fn run() {
 
     update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks));
 
-    let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window, 0.0, 1.0/60.0)));
+    let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window, 0.0, 1.0/60.0, 0.6, false)));
     let scene_output = Arc::new(SceneOutput::new(bgr_texture, remaining_tasks, window_lock));
 
     if !REALTIME {
@@ -216,6 +216,8 @@ pub fn run() {
 
     } else  {
     
+        let controls_string = "(Controls: O/P - Decrease/Increase Sky Brightness;  B - Toggle Emissive)";
+
         let mut batches = vec![];
         let mut jobs: Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>>  = vec![];
         for task_y in 0..num_tasks_xy.1 {
@@ -252,6 +254,7 @@ pub fn run() {
         let mut right_mouse_down = false;
         let mut mouse_x = 0.0;
         let mut mouse_y = 0.0;
+        let mut b_down  = false;
         while keep_running {
 
             let start_timer = Instant::now();
@@ -259,6 +262,7 @@ pub fn run() {
             // App logic - modifying of shared state allowed
             {
                 let mut scene_state_writable = scene_state.write();
+                let mut clear_scene = false;
 
                 // update time
                 scene_state_writable.time0 = scene_state_writable.time1;
@@ -271,6 +275,12 @@ pub fn run() {
                 let mouse_y_last_frame = mouse_y;
                 let _left_mouse_down_last_frame = left_mouse_down;
                 let right_mouse_down_last_frame = right_mouse_down;
+                let b_down_last_frame = b_down;
+                b_down = false;
+              //  right_mouse_down = false;
+              //  mouse_x = 0.0;
+              //  mouse_y = 0.0;
+              //  left_mouse_down = false;
 
                 events_loop.poll_events(|event| {
                     use winit::VirtualKeyCode;
@@ -290,6 +300,15 @@ pub fn run() {
                                 Some(VirtualKeyCode::Left) => look_left = true,
                                 Some(VirtualKeyCode::Up) => look_up = true,
                                 Some(VirtualKeyCode::Down) => look_down = true,
+                                Some(VirtualKeyCode::O) => {
+                                    clear_scene = true;
+                                    scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
+                                },
+                                Some(VirtualKeyCode::P) => {
+                                    clear_scene = true;
+                                    scene_state_writable.sky_brightness += 0.05;
+                                },
+                                Some(VirtualKeyCode::B) => b_down = true,
                                 _ => {},
                             },
                             WindowEvent::MouseInput { state, button, .. } => {
@@ -313,6 +332,11 @@ pub fn run() {
                         _ => {},
                     }
                 });
+
+                if b_down_last_frame && !b_down {
+                    scene_state_writable.disable_emissive = !scene_state_writable.disable_emissive;
+                    clear_scene = true;
+                }
 
                 // handle input for camera
                 // TODO(SS): Move state into app struct and move to function just to keep this loop tidier
@@ -423,7 +447,7 @@ pub fn run() {
                     }
 
 
-                    if camera_moved {
+                    if camera_moved || clear_scene {
                         cam.update();
                         batches.iter().for_each(|batch| batch.write().clear_buffer());
                         let buffer = scene_output.buffer.write();
@@ -453,7 +477,8 @@ pub fn run() {
             frame_time = frame_duration.as_secs() as f64 + frame_duration.subsec_nanos() as f64 * 1e-9;
 
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
-            scene_state_readable.window.set_title(&format!("Path Tracer: FPS = {}", fps as i32));
+            scene_state_readable.window.set_title(&format!("Path Tracer: FPS = {}  |  Sky Brightness = {}; Emissive = {}  |  {}", fps as i32,
+                                                            scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, controls_string));
         }
 
         // write image 
@@ -551,12 +576,13 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> 
         for a in -11..11 {
             for b in -11..11 {
                 let choose_mat = random::rand();
-                let center = Vec3::new(a as f64 + 0.9 * random::rand(), 0.2, b as f64 + 0.9 * random::rand());
+                let mut center = Vec3::new(a as f64 + 0.9 * random::rand(), 0.2, b as f64 + 0.9 * random::rand());
                 if (&center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
                     let material: Arc<Material + Send + Sync + 'static>;
+                    let mut is_emissive = false;
                     if choose_mat < 0.6 { // diffuse 
-                        let is_emissive = random::rand() < 0.3;
-                        let emissive = if is_emissive {2.0 * random::rand()} else {0.0};
+                        is_emissive = random::rand() < 0.1;
+                        let emissive = if is_emissive {30.0} else {0.0};
                         material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(
                                                         random::rand()*random::rand(), 
                                                         random::rand()*random::rand(), 
@@ -573,7 +599,9 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> 
                     if MOVING_SPHERES {
                         list.push(Arc::new(MovingSphere::new(center.clone(), &center+Vec3::new(0.0,0.5*random::rand(),0.0), 0.0, 1.0, 0.2, material)));
                     } else {
-                        list.push(Arc::new(Sphere::new(center.clone(),0.2, material)));
+                        let radius = if is_emissive {1.0} else {0.2};
+                        center.y += if is_emissive {10.0} else {0.0};
+                        list.push(Arc::new(Sphere::new(center.clone(),radius, material)));
                     }
                 }
             }

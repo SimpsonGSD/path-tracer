@@ -16,7 +16,6 @@ const RENDER_UPDATE_LATENCY: u32 = 20;
 pub const REALTIME: bool = true;
 const ENABLE_RENDER: bool = true && !REALTIME;
 const CHANCE_TO_SKIP_PER_FRAME: f64 = 0.8;
-const SKY_BRIGHTNESS: f64 = 0.1;
 
 pub struct SceneOutput {
     pub buffer: MultiSliceReadWriteLock<Vec<f32>>,
@@ -41,17 +40,22 @@ pub struct SceneState {
     pub window: winit::Window,
     pub time0: f64,
     pub time1: f64,
+    pub sky_brightness: f64,
+    pub disable_emissive: bool,
 }
 
 impl SceneState {
-    pub fn new(cam: Camera, world: Box<Hitable + Send + Sync + 'static>, window: winit::Window, time0: f64, time1: f64) -> SceneState {
+    pub fn new(cam: Camera, world: Box<Hitable + Send + Sync + 'static>, window: winit::Window, time0: f64, time1: f64, 
+               sky_brightness: f64, disable_emissive: bool) -> SceneState {
             
         SceneState {
             cam,
             world,
             window,
             time0,
-            time1
+            time1,
+            sky_brightness,
+            disable_emissive
         }
     }
 }
@@ -143,7 +147,7 @@ impl TraceSceneBatchJob {
                     let v: f64 = ((j as f64) + random) / (self.image_size.1 as f64);
 
                     let r = read_state.cam.get_ray(u, v);
-                    col += color(&r, &read_state.world, 0, read_state.time0, read_state.time1);
+                    col += color(&r, &read_state.world, 0, read_state.time0, read_state.time1, read_state.sky_brightness, read_state.disable_emissive);
 
                     // SS: Debug uv image
                     // col += Vec3::new(u, v, 0.0);
@@ -205,21 +209,21 @@ impl JobTask for TraceSceneBatchJob {
     }
 }
 
-fn color(r : &Ray, world: &Box<Hitable + Send + Sync + 'static>, depth: i32, t_min: f64, t_max: f64) -> Vec3 {
+fn color(r : &Ray, world: &Box<Hitable + Send + Sync + 'static>, depth: i32, t_min: f64, t_max: f64, sky_brightness: f64, disable_emissive: bool) -> Vec3 {
     if let Some(hit_record) = world.hit(r, 0.001, f64::MAX) {
         if depth < 50 {
-            let emitted = hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p);
+            let emitted = if !disable_emissive {hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p)} else {Vec3::from_float(0.0)};
             if  let Some((scattered, attenuation)) =  hit_record.mat.scatter(r, &hit_record) {
-                return emitted + attenuation * color(&scattered, world, depth+1, 0.001, f64::MAX);
+                return emitted + attenuation * color(&scattered, world, depth+1, 0.001, f64::MAX, sky_brightness, disable_emissive);
             }
         }
         return Vec3::new_zero_vector();
     } else {
         let unit_dir = Vec3::new_unit_vector(&r.direction());
         let t = 0.5*(unit_dir.y + 1.0);
-        let white = Vec3::from_float(SKY_BRIGHTNESS);
-        let sky = Vec3::new(0.5, 0.7, 1.0) * SKY_BRIGHTNESS;
-        return lerp(&white, &sky, t);
+        let white = Vec3::from_float(1.0);
+        let sky = Vec3::new(0.5, 0.7, 1.0);
+        return lerp(&white, &sky, t) * sky_brightness;
         //return Vec3::new(0.0, 0.0, 0.0);
     }
 }
