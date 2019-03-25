@@ -50,7 +50,7 @@ const OUTPUT_IMAGE_ON_CLOSE: bool = false;
 
 fn reinhard_tonemap(colour: &Vec3) -> Vec3 {
     let luminance: Vec3 = Vec3::new(0.2126, 0.7152, 0.0722);
-    static EXPOSURE: f64 = 1.0;
+    static EXPOSURE: f64 = 2.5;
     let colour = colour * EXPOSURE;
     //&colour / (vec3::dot(&colour, &luminance) + 1.0)
     &colour / (&colour + 1.0)
