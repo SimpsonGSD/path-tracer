@@ -14,7 +14,7 @@ use jobs::MultiSliceReadWriteLock;
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
 pub const REALTIME: bool = true;
-const ENABLE_RENDER: bool = false && !REALTIME;
+const ENABLE_RENDER: bool = true && !REALTIME;
 const CHANCE_TO_SKIP_PER_FRAME: f64 = 0.8;
 
 pub struct SceneOutput {
@@ -126,8 +126,10 @@ impl TraceSceneBatchJob {
             let start = (self.start_xy.0 * 3 + j * self.image_size.0 * 3) as usize;
             let dest_buffer_row_slice = &mut self.shared_scene_write_state.buffer.write()[start..start + stride];
 
-            let row_offset = stride * row_idx as usize;
-            let mut buffer_offset = row_offset;
+            let mut buffer_offset = {
+                let row_offset = (self.num_pixels_xy.1 - 1 - row_idx as u32) as usize; // must iterate backwards for the render buffer for non-realtime
+                stride * row_offset
+            };
 
             for (col_idx, i) in (self.start_xy.0..self.end_xy.0).enumerate() {
 
@@ -136,7 +138,6 @@ impl TraceSceneBatchJob {
                 }
 
                 let local_pixel_idx = row_idx * self.num_pixels_xy.0 as usize + col_idx;
-                //self.num_frames_per_pixel[local_pixel_idx] += 1;
                 self.num_frames_per_pixel[local_pixel_idx] += if self.num_frames_per_pixel[local_pixel_idx] <= 1000 {1} else {0};
 
                 let mut col = Vec3::new_zero_vector();
@@ -153,30 +154,37 @@ impl TraceSceneBatchJob {
                     // col += Vec3::new(u, v, 0.0);
                 }
 
+                // PDF
                 col = col / self.num_samples as f64;
-
-                let num_frames = self.num_frames_per_pixel[local_pixel_idx];
-                let weight = 1.0 / num_frames as f32;
-                let one_minus_weight: f32 = 1.0 - weight;
 
                 let index = col_idx*3 as usize;
                 if REALTIME {
+
+                    let num_frames = self.num_frames_per_pixel[local_pixel_idx];
+                    let weight = 1.0 / num_frames as f32;
+                    let one_minus_weight: f32 = 1.0 - weight;
+
                     dest_buffer_row_slice[index]     = (col.z as f32) * weight + dest_buffer_row_slice[index    ] * one_minus_weight;
                     dest_buffer_row_slice[index + 1] = (col.y as f32) * weight + dest_buffer_row_slice[index + 1] * one_minus_weight;
                     dest_buffer_row_slice[index + 2] = (col.x as f32) * weight + dest_buffer_row_slice[index + 2] * one_minus_weight;
                 } else {
 
-                    // Gamma correct 1/2.0 and convert to u8
-                    let ir = (255.99*col.x.sqrt()) as u8;
-                    let ig = (255.99*col.y.sqrt()) as u8;
-                    let ib = (255.99*col.z.sqrt()) as u8;
-                    
-                    self.local_buffer_u8[buffer_offset]  = ib;
-                    buffer_offset += 1;
-                    self.local_buffer_u8[buffer_offset]  = ig;
-                    buffer_offset += 1;
-                    self.local_buffer_u8[buffer_offset]  = ir;
-                    buffer_offset += 1;
+                    // only required if rendering during trace
+                    if ENABLE_RENDER {
+                        let tonemapped_col = reinhard_tonemap(&col);
+
+                        // Gamma correct 1/2.0 and convert to u8
+                        let ir = (255.99*tonemapped_col.x.sqrt()) as u8;
+                        let ig = (255.99*tonemapped_col.y.sqrt()) as u8;
+                        let ib = (255.99*tonemapped_col.z.sqrt()) as u8;
+                        
+                        self.local_buffer_u8[buffer_offset]  = ib;
+                        buffer_offset += 1;
+                        self.local_buffer_u8[buffer_offset]  = ig;
+                        buffer_offset += 1;
+                        self.local_buffer_u8[buffer_offset]  = ir;
+                        buffer_offset += 1;
+                    }
 
                     dest_buffer_row_slice[index] = col.b() as f32;
                     dest_buffer_row_slice[index + 1] = col.g() as f32;
@@ -226,4 +234,12 @@ fn color(r : &Ray, world: &Box<Hitable + Send + Sync + 'static>, depth: i32, t_m
         return lerp(&white, &sky, t) * sky_brightness;
         //return Vec3::new(0.0, 0.0, 0.0);
     }
+}
+
+pub fn reinhard_tonemap(colour: &Vec3) -> Vec3 {
+    let luminance: Vec3 = Vec3::new(0.2126, 0.7152, 0.0722);
+    static EXPOSURE: f64 = 1.5;
+    let colour = colour * EXPOSURE;
+    //&colour / (vec3::dot(&colour, &luminance) + 1.0)
+    &colour / (&colour + 1.0)
 }

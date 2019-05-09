@@ -48,13 +48,7 @@ use jobs::{Jobs, JobTask, MultiSliceReadWriteLock};
 const RUN_SINGLE_THREADED: bool = false;
 const OUTPUT_IMAGE_ON_CLOSE: bool = false;
 
-fn reinhard_tonemap(colour: &Vec3) -> Vec3 {
-    let luminance: Vec3 = Vec3::new(0.2126, 0.7152, 0.0722);
-    static EXPOSURE: f64 = 2.5;
-    let colour = colour * EXPOSURE;
-    //&colour / (vec3::dot(&colour, &luminance) + 1.0)
-    &colour / (&colour + 1.0)
-}
+
 
 pub fn run() {
 
@@ -168,7 +162,7 @@ pub fn run() {
                 }
 
                 let percent_done = ((num_tasks - scene_output.remaining_tasks.load(Ordering::Relaxed) as u32) as f32 / num_tasks as f32) * 100.0;
-                update_window_title_status(&scene_state.read().window, &format!("Tracing... {} tasks. {}% done", num_tasks, percent_done));
+                update_window_title_status(&scene_state.read().window, &format!("Tracing... {} tasks, {} x {} {}spp. {}% done",  num_tasks, nx, ny, ns, percent_done));
 
 
                 // yield thread
