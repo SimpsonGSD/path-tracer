@@ -48,13 +48,24 @@ use jobs::{Jobs, JobTask, MultiSliceReadWriteLock};
 const RUN_SINGLE_THREADED: bool = false;
 const OUTPUT_IMAGE_ON_CLOSE: bool = false;
 
+#[derive(Clone, Copy)]
+pub struct Config {
+    realtime: bool
+}
 
+impl Config {
+    pub fn new(realtime: bool) -> Self {
+        Config {
+            realtime
+        }
+    }
+}
 
-pub fn run() {
+pub fn run(config: Config) {
 
     let nx: u32 = 1280;
     let ny: u32 = 720;
-    let ns: u32 = if REALTIME {1} else {100}; // number of samples
+    let ns: u32 = if config.realtime {1} else {100}; // number of samples
     let image_size = (nx,ny);
 
     let window_width = nx as f64;
@@ -115,10 +126,12 @@ pub fn run() {
 
     update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks));
 
-    let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window, 0.0, 1.0/60.0, 0.6, false)));
+    let default_disable_emissive = config.realtime; // Disable emissive for realtime by default as it's noisy
+    let default_sky_brightness = if default_disable_emissive {1.0} else {0.6};
+    let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window, 0.0, 1.0/60.0, default_sky_brightness, default_disable_emissive, config)));
     let scene_output = Arc::new(SceneOutput::new(bgr_texture, remaining_tasks, window_lock));
 
-    if !REALTIME {
+    if !config.realtime {
         if !RUN_SINGLE_THREADED {
             let mut batches: Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>> = vec![];
             for task_y in 0..num_tasks_xy.1 {
@@ -130,7 +143,7 @@ pub fn run() {
                                                         image_size, 
                                                          scene_state.clone(),
                                                          scene_output.clone(),
-                                                        );
+                                                         config.realtime);
                     batches.push(Arc::new(RwLock::new(batch)));
                 }
             }
@@ -174,7 +187,9 @@ pub fn run() {
             let mut batch = TraceSceneBatchJob::new(ns, 
                                                 start_xy, end_xy, 
                                                 image_size, 
-                                                scene_state.clone(), scene_output.clone());
+                                                scene_state.clone(), 
+                                                scene_output.clone(),
+                                                config.realtime);
             batch.run();
         }
         
@@ -222,7 +237,9 @@ pub fn run() {
                 let batch = TraceSceneBatchJob::new(ns, 
                                                     start_xy, end_xy, 
                                                      image_size, 
-                                                     scene_state.clone(), scene_output.clone());
+                                                     scene_state.clone(), 
+                                                     scene_output.clone(),
+                                                     config.realtime);
                 let batch = Arc::new(RwLock::new(batch));
                 batches.push(batch.clone());
                 jobs.push(batch);

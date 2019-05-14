@@ -10,11 +10,11 @@ use winit_utils::*;
 
 use jobs::JobTask;
 use jobs::MultiSliceReadWriteLock;
+use super::Config;
 
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
-pub const REALTIME: bool = true;
-const ENABLE_RENDER: bool = true && !REALTIME;
+const ENABLE_RENDER: bool = true;
 const CHANCE_TO_SKIP_PER_FRAME: f64 = 0.8;
 
 pub struct SceneOutput {
@@ -42,11 +42,12 @@ pub struct SceneState {
     pub time1: f64,
     pub sky_brightness: f64,
     pub disable_emissive: bool,
+    pub config: Config,
 }
 
 impl SceneState {
     pub fn new(cam: Camera, world: Box<Hitable + Send + Sync + 'static>, window: winit::Window, time0: f64, time1: f64, 
-               sky_brightness: f64, disable_emissive: bool) -> SceneState {
+               sky_brightness: f64, disable_emissive: bool, config: Config) -> SceneState {
             
         SceneState {
             cam,
@@ -55,7 +56,8 @@ impl SceneState {
             time0,
             time1,
             sky_brightness,
-            disable_emissive
+            disable_emissive,
+            config
         }
     }
 }
@@ -71,12 +73,20 @@ pub struct TraceSceneBatchJob {
     shared_scene_read_state: Arc<RwLock<SceneState>>,
     shared_scene_write_state: Arc<SceneOutput>,
     num_frames: i32,
-    num_frames_per_pixel: Vec<u32>
+    num_frames_per_pixel: Vec<u32>,
+    realtime: bool,
 }
 
 impl TraceSceneBatchJob {
-    pub fn new(num_samples: u32, start_xy: (u32, u32), end_xy: (u32, u32), 
-               image_size: (u32, u32), shared_scene_read_state: Arc<RwLock<SceneState>>, shared_scene_write_state: Arc<SceneOutput>) -> TraceSceneBatchJob {
+    pub fn new(
+        num_samples: u32, 
+        start_xy: (u32, u32), 
+        end_xy: (u32, u32), 
+        image_size: (u32, u32), 
+        shared_scene_read_state: Arc<RwLock<SceneState>>, 
+        shared_scene_write_state: Arc<SceneOutput>,
+        realtime: bool) -> TraceSceneBatchJob {
+
         let num_pixels_xy = (end_xy.0 - start_xy.0, end_xy.1 - start_xy.1);
         // the window and image buffer start with 0 at the top not the bottom so we must convert here.
         let image_start_xy = (start_xy.0, image_size.1 - start_xy.1 - num_pixels_xy.1);
@@ -87,11 +97,12 @@ impl TraceSceneBatchJob {
             image_size,
             num_pixels_xy,
             image_start_xy,
-            local_buffer_u8: if !REALTIME {vec![0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize]} else {vec![]},
+            local_buffer_u8: if !realtime {vec![0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize]} else {vec![]},
             shared_scene_read_state,
             shared_scene_write_state,
             num_frames: 0,
-            num_frames_per_pixel: vec![0; (num_pixels_xy.0*num_pixels_xy.1) as usize]
+            num_frames_per_pixel: vec![0; (num_pixels_xy.0*num_pixels_xy.1) as usize],
+            realtime,
         }
     }
 
@@ -99,7 +110,7 @@ impl TraceSceneBatchJob {
         self.num_frames = 0;
         self.num_frames_per_pixel = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1) as usize];
         
-        if !REALTIME {
+        if !self.realtime {
             self.local_buffer_u8 = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
         } 
         //else {
@@ -119,6 +130,8 @@ impl TraceSceneBatchJob {
         self.num_frames += 1;//if self.num_frames == 500 {0} else {1};
         let read_state = self.shared_scene_read_state.read();
 
+        let local_enable_render: bool = ENABLE_RENDER && !self.realtime;
+
         for (row_idx, j) in (self.start_xy.1..self.end_xy.1).rev().enumerate() {
 
             let stride = (self.num_pixels_xy.0 * 3) as usize;
@@ -133,7 +146,7 @@ impl TraceSceneBatchJob {
 
             for (col_idx, i) in (self.start_xy.0..self.end_xy.0).enumerate() {
 
-                if REALTIME && random::rand() < CHANCE_TO_SKIP_PER_FRAME {
+                if read_state.config.realtime && random::rand() < CHANCE_TO_SKIP_PER_FRAME {
                     continue;
                 }
 
@@ -158,7 +171,7 @@ impl TraceSceneBatchJob {
                 col = col / self.num_samples as f64;
 
                 let index = col_idx*3 as usize;
-                if REALTIME {
+                if read_state.config.realtime {
 
                     let num_frames = self.num_frames_per_pixel[local_pixel_idx];
                     let weight = 1.0 / num_frames as f32;
@@ -170,7 +183,7 @@ impl TraceSceneBatchJob {
                 } else {
 
                     // only required if rendering during trace
-                    if ENABLE_RENDER {
+                    if local_enable_render {
                         let tonemapped_col = reinhard_tonemap(&col);
 
                         // Gamma correct 1/2.0 and convert to u8
@@ -192,13 +205,13 @@ impl TraceSceneBatchJob {
                 }
             }
 
-            if ENABLE_RENDER && j % RENDER_UPDATE_LATENCY == 0 && self.shared_scene_write_state.window_lock.compare_and_swap(false, true, Ordering::Acquire) {
+            if local_enable_render && j % RENDER_UPDATE_LATENCY == 0 && self.shared_scene_write_state.window_lock.compare_and_swap(false, true, Ordering::Acquire) {
                 // Update frame buffer to show progress
                 update_window_and_release_lock(&mut self.local_buffer_u8, &read_state.window, self.image_start_xy, self.num_pixels_xy, &self.shared_scene_write_state.window_lock);
             }
         }
 
-        if ENABLE_RENDER {
+        if local_enable_render {
             while self.shared_scene_write_state.window_lock.compare_and_swap(false, true, Ordering::Acquire) {
                 // Update frame buffer to show progress
                 update_window_and_release_lock(&mut self.local_buffer_u8, &read_state.window, self.image_start_xy, self.num_pixels_xy, &self.shared_scene_write_state.window_lock);
