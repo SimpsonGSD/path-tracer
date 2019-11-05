@@ -4,8 +4,6 @@ use path_tracer::Config;
 
 use std::env;
 
-// TEMP(SS): integration test
-
 fn main() {
     let args: Vec<String> = env::args().collect();
     let realtime = if args.len() > 1 {
