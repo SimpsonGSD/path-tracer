@@ -22,6 +22,27 @@ extern crate lazy_static;
 
 extern crate parking_lot;
 
+#[cfg(feature = "dx12")]
+pub type Backend = rendy::dx12::Backend;
+
+#[cfg(feature = "metal")]
+pub type Backend = rendy::metal::Backend;
+
+#[cfg(feature = "vulkan")]
+pub type Backend = rendy::vulkan::Backend;
+
+#[cfg(feature = "empty")]
+pub type Backend = rendy::empty::Backend;
+
+extern crate rendy;
+use rendy::{
+    command::{Graphics, Supports},
+    factory::{Factory, ImageState},
+    graph::{present::PresentNode, render::*, GraphBuilder},
+};
+
+use rendy::hal;
+
 // module imports
 mod math;
 mod hitable;
@@ -61,7 +82,13 @@ impl Config {
     }
 }
 
-pub fn run(config: Config) {
+#[cfg(not(any(feature = "dx12", feature = "metal", feature = "vulkan")))]
+pub fn run(config: Config) -> Result<(), &'static str>{
+    Err("run with --feature dx/metal/vulkan")
+}
+
+#[cfg(any(feature = "dx12", feature = "metal", feature = "vulkan"))]
+pub fn run(config: Config) -> Result<(), &'static str>{
 
     let nx: u32 = 1280;
     let ny: u32 = 720;
@@ -75,6 +102,28 @@ pub fn run(config: Config) {
     let builder = WindowBuilder::new();
     let window = builder.with_dimensions(LogicalSize{width: window_width, height: window_height}).build(&events_loop).unwrap();
     window.set_title("Path Tracer");
+
+    let (mut factory, mut families): (Factory<Backend>, _) = {
+        let config: rendy::factory::Config = Default::default();
+        rendy::factory::init(config).map_err(|_| "Could not initialse rendy")?
+    };
+    let surface = factory.create_surface(&window);
+    let align = hal::adapter::PhysicalDevice::limits(factory.physical())
+        .min_uniform_buffer_offset_alignment;
+    let queue = families
+        .as_slice()
+        .iter()
+        .find(|family| {
+            if let Some(Graphics) = family.capability().supports() {
+                true
+            } else {
+                false
+            }
+        })
+        .unwrap()
+        .as_slice()[0]
+        .id();
+
 
     let start_timer = Instant::now();
     
@@ -499,6 +548,8 @@ pub fn run(config: Config) {
             save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
         }
     }
+
+    Ok(())
 }
 
 fn update_window_title_status(window: &winit::Window, status: &str) {
