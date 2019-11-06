@@ -92,7 +92,7 @@ impl Material for Dielectric {
         Some((scattered, attenuation))
     }
 
-    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
+    fn emitted(&self, _u: f64, _v: f64, _point: &Vec3) -> Vec3 {
         Vec3::from_float(0.0)
     }
 
@@ -127,18 +127,18 @@ impl Material for Metal{
         }
     }
 
-    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
+    fn emitted(&self, _u: f64, _v: f64, _point: &Vec3) -> Vec3 {
         Vec3::from_float(0.0)
     }
 }
 
 pub struct Lambertian {
-    albedo: Arc<Texture + Send + Sync + 'static>,
+    albedo: Arc<dyn Texture + Send + Sync + 'static>,
     emissive: f64
 }
 
 impl Lambertian {
-    pub fn new(albedo: Arc<Texture + Send + Sync + 'static>, emissive: f64) -> Lambertian {
+    pub fn new(albedo: Arc<dyn Texture + Send + Sync + 'static>, emissive: f64) -> Lambertian {
         Lambertian {
             albedo,
             emissive

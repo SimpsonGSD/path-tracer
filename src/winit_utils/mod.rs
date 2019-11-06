@@ -1,3 +1,5 @@
+use rendy::wsi::winit;
+
 
 pub fn get_physical_window_size(window: &winit::Window) -> (f64, f64) {
     let dpi_factor = window.get_current_monitor().get_hidpi_factor();

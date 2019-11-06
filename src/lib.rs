@@ -1,3 +1,8 @@
+#![cfg_attr(
+    not(any(feature = "dx12", feature = "metal", feature = "vulkan")),
+    allow(unused)
+)]
+
 // std library imports
 use std::fs::File;
 use std::io::Write;
@@ -11,15 +16,8 @@ use std::thread;
 // 3rd party crate imports
 #[cfg(target_os = "windows")]
 extern crate winapi;
-
-extern crate winit;
-use winit::{ControlFlow, Event, WindowBuilder, WindowEvent};
-use winit::dpi::LogicalSize;
-use winit_utils::*;
-
 extern crate num_cpus;
 extern crate lazy_static;
-
 extern crate parking_lot;
 
 #[cfg(feature = "dx12")]
@@ -42,6 +40,10 @@ use rendy::{
 };
 
 use rendy::hal;
+use rendy::wsi::winit;
+use winit::{ControlFlow, Event, WindowBuilder, WindowEvent};
+use winit::dpi::LogicalSize;
+use winit_utils::*;
 
 // module imports
 mod math;
@@ -54,6 +56,7 @@ mod bvh;
 mod trace;
 mod winit_utils;
 mod jobs;
+mod node;
 
 use math::*;
 use hitable::*;
@@ -68,6 +71,28 @@ use jobs::{Jobs, JobTask, MultiSliceReadWriteLock};
 // For tracking multithreading bugs
 const RUN_SINGLE_THREADED: bool = false;
 const OUTPUT_IMAGE_ON_CLOSE: bool = false;
+const FRAMES_IN_FLIGHT: u32 = 3;
+
+// Returns the cargo manifest directory when running the executable with cargo
+// or the directory in which the executable resides otherwise,
+// traversing symlinks if necessary.
+pub fn application_root_dir() -> String {
+    match std::env::var("CARGO_MANIFEST_DIR") {
+        Ok(_) => String::from(env!("CARGO_MANIFEST_DIR")),
+        Err(_) => {
+            let mut path = std::env::current_exe().expect("Failed to find executable path.");
+            while let Ok(target) = std::fs::read_link(path.clone()) {
+                path = target;
+            }
+            String::from(
+                path.parent()
+                    .expect("Failed to get parent directory of the executable.")
+                    .to_str()
+                    .unwrap(),
+            )
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct Config {
@@ -83,12 +108,17 @@ impl Config {
 }
 
 #[cfg(not(any(feature = "dx12", feature = "metal", feature = "vulkan")))]
-pub fn run(config: Config) -> Result<(), &'static str>{
-    Err("run with --feature dx/metal/vulkan")
+pub fn run(config: Config) -> Result<(), failure::Error>{
+    Err(failure::err_msg("run with --feature dx/metal/vulkan"))
 }
 
 #[cfg(any(feature = "dx12", feature = "metal", feature = "vulkan"))]
-pub fn run(config: Config) -> Result<(), &'static str>{
+pub fn run(config: Config) -> Result<(), failure::Error>{
+
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Warn)
+        .filter_module("rendy", log::LevelFilter::Info)
+        .init();
 
     let nx: u32 = 1280;
     let ny: u32 = 720;
@@ -103,12 +133,13 @@ pub fn run(config: Config) -> Result<(), &'static str>{
     let window = builder.with_dimensions(LogicalSize{width: window_width, height: window_height}).build(&events_loop).unwrap();
     window.set_title("Path Tracer");
 
+    //+ Rendy integration
     let (mut factory, mut families): (Factory<Backend>, _) = {
         let config: rendy::factory::Config = Default::default();
-        rendy::factory::init(config).map_err(|_| "Could not initialse rendy")?
+        rendy::factory::init(config)?
     };
     let surface = factory.create_surface(&window);
-    let align = hal::adapter::PhysicalDevice::limits(factory.physical())
+    let hw_alignment = hal::adapter::PhysicalDevice::limits(factory.physical())
         .min_uniform_buffer_offset_alignment;
     let queue = families
         .as_slice()
@@ -124,6 +155,35 @@ pub fn run(config: Config) -> Result<(), &'static str>{
         .as_slice()[0]
         .id();
 
+    factory.maintain(&mut families);
+    let mut graph_builder = GraphBuilder::<Backend, node::Aux>::new();
+    let color = graph_builder.create_image(
+        hal::image::Kind::D2(image_size.0, image_size.1, 1, 1),
+        1,
+        factory.get_surface_format(&surface),
+        Some(hal::command::ClearValue::Color([0.1, 0.3, 0.4, 1.0].into())),
+    );
+    let tonemap_pass = graph_builder.add_node(
+        node::tonemap::Pipeline::builder()
+            .into_subpass()
+            .with_color(color)
+            .into_pass(),
+    );
+    graph_builder.add_node(PresentNode::builder(&factory, surface, color).with_dependency(tonemap_pass));
+    
+    let mut aux = node::Aux {
+        frames: FRAMES_IN_FLIGHT as usize,
+        hw_alignment,
+        tonemapper_args: node::tonemap::TonemapperArgs {
+            exposure: 1.0,
+            clear_colour: [1.0, 0.0, 0.0],
+        }
+    };
+
+    let mut frame_graph = graph_builder
+        .with_frames_in_flight(FRAMES_IN_FLIGHT)
+        .build(&mut factory, &mut families, &mut aux)?;
+    //- Rendy integration
 
     let start_timer = Instant::now();
     
@@ -182,7 +242,7 @@ pub fn run(config: Config) -> Result<(), &'static str>{
 
     if !config.realtime {
         if !RUN_SINGLE_THREADED {
-            let mut batches: Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>> = vec![];
+            let mut batches: Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>> = vec![];
             for task_y in 0..num_tasks_xy.1 {
                 for task_x in 0..num_tasks_xy.0 {
                     let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
@@ -278,7 +338,7 @@ pub fn run(config: Config) -> Result<(), &'static str>{
         let controls_string = "Controls: O/P - Decrease/Increase Sky Brightness;  B - Toggle Emissive";
 
         let mut batches = vec![];
-        let mut jobs: Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>>  = vec![];
+        let mut jobs: Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>>  = vec![];
         for task_y in 0..num_tasks_xy.1 {
             for task_x in 0..num_tasks_xy.0 {
                 let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
@@ -319,6 +379,10 @@ pub fn run(config: Config) -> Result<(), &'static str>{
         while keep_running {
 
             let start_timer = Instant::now();
+
+            //+ Rendy Integration
+            factory.maintain(&mut families);
+            //- Rendy Integration
 
             // App logic - modifying of shared state allowed
             {
@@ -523,7 +587,11 @@ pub fn run(config: Config) -> Result<(), &'static str>{
 
             let scene_state_readable = scene_state.read();
 
-            update_window_framebuffer(&scene_state_readable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+
+            //+ Rendy Integration
+            frame_graph.run(&mut factory, &mut families, &mut aux);
+            //update_window_framebuffer(&scene_state_readable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+            //- Rendy Integration
 
             // throttle main thread to 60fps
             const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
@@ -547,6 +615,8 @@ pub fn run(config: Config) -> Result<(), &'static str>{
             let image_file_name = "output.ppm";
             save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
         }
+
+        frame_graph.dispose(&mut factory, &mut aux);
     }
 
     Ok(())
@@ -587,11 +657,11 @@ fn save_bgr_texture_as_ppm(filename: &str, bgr_buffer: &Vec<u8>, buffer_size: (u
 }
 
 #[allow(dead_code)]
-fn two_spheres() -> Box<Hitable + Send + Sync + 'static> {
+fn two_spheres() -> Box<dyn Hitable + Send + Sync + 'static> {
     let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(1.0, 0.0, 0.0))), 0.0));
     let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.0, 1.0))), 0.0));
 
-    let list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![
+    let list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![
         Arc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
         Arc::new(Sphere::new(Vec3::new(0.0,  10.0, 0.0), 10.0, blue_material)),
     ];
@@ -600,7 +670,7 @@ fn two_spheres() -> Box<Hitable + Send + Sync + 'static> {
 }
 
 #[allow(dead_code)]
-fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
+fn four_spheres() -> Box<dyn Hitable + Send + Sync + 'static> {
     let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.0, 0.0))), 0.0));
     let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.3, 0.3, 0.3))), 0.0));
     let green_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.9, 0.0))), 0.0));
@@ -609,7 +679,7 @@ fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
     let dielectric_material = Arc::new(Dielectric::new(1.6));
     let metal_material = Arc::new(Metal::new(Vec3::from_float(1.0), 0.0));
 
-    let list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![
+    let list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![
         Arc::new(Sphere::new(Vec3::new(4.0, -0.3, 0.7), 0.3, red_material)),
         Arc::new(Sphere::new(Vec3::new(0.0,  -100.5, -1.0), 100.0, blue_material)),
         Arc::new(Sphere::new(Vec3::new(1.0,  0.0, -1.0), 0.5, green_material)),
@@ -626,11 +696,11 @@ fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
 }
 
 #[allow(dead_code)]
-fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> {
+fn random_scene(t_min: f64, t_max: f64) -> Box<dyn Hitable + Send + Sync + 'static> {
     let checker_texture = Arc::new(CheckerTexture::new(Arc::new(ConstantTexture::new(Vec3::new(0.2, 0.3, 0.1))), 
                                                       Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.9)))));
 
-    let mut list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![];
+    let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
 
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(checker_texture.clone(), 0.0)))));
 
@@ -643,7 +713,7 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> 
                 let choose_mat = random::rand();
                 let mut center = Vec3::new(a as f64 + 0.9 * random::rand(), 0.2, b as f64 + 0.9 * random::rand());
                 if (&center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
-                    let material: Arc<Material + Send + Sync + 'static>;
+                    let material: Arc<dyn Material + Send + Sync + 'static>;
                     let mut is_emissive = false;
                     if choose_mat < 0.6 { // diffuse 
                         is_emissive = random::rand() < 0.1;

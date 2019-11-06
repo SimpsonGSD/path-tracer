@@ -24,12 +24,12 @@ impl Texture for ConstantTexture {
 }
 
 pub struct CheckerTexture {
-    even: Arc<Texture + Send + Sync + 'static>,
-    odd: Arc<Texture + Send + Sync + 'static>
+    even: Arc<dyn Texture + Send + Sync + 'static>,
+    odd: Arc<dyn Texture + Send + Sync + 'static>
 }
 
 impl CheckerTexture {
-    pub fn new(even: Arc<Texture + Send + Sync + 'static>, odd: Arc<Texture + Send + Sync + 'static>) -> CheckerTexture {
+    pub fn new(even: Arc<dyn Texture + Send + Sync + 'static>, odd: Arc<dyn Texture + Send + Sync + 'static>) -> CheckerTexture {
         CheckerTexture {
             even,
             odd

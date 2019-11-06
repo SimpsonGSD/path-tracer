@@ -7,11 +7,11 @@ use std::f64::consts::{PI, FRAC_2_PI, FRAC_PI_2};
 pub struct Sphere {
     center: Vec3,
     radius: f64,
-    material: Arc<Material + Send + Sync + 'static>,
+    material: Arc<dyn Material + Send + Sync + 'static>,
 }
 
 impl Sphere {
-    pub fn new(center: Vec3, radius: f64, material: Arc<Material + Send + Sync + 'static>) -> Sphere {
+    pub fn new(center: Vec3, radius: f64, material: Arc<dyn Material + Send + Sync + 'static>) -> Sphere {
         Sphere {
             center,
             radius,
@@ -81,11 +81,11 @@ pub struct MovingSphere {
     //time1: f64,
     time_range: f64,
     radius: f64,
-    material: Arc<Material + Send + Sync + 'static>
+    material: Arc<dyn Material + Send + Sync + 'static>
 }
 
 impl MovingSphere {
-    pub fn new(center0: Vec3, center1: Vec3, time0: f64, time1: f64, radius: f64, material: Arc<Material + Send + Sync + 'static>) -> MovingSphere {
+    pub fn new(center0: Vec3, center1: Vec3, time0: f64, time1: f64, radius: f64, material: Arc<dyn Material + Send + Sync + 'static>) -> MovingSphere {
         let center_range = &center1 - &center0;
         MovingSphere {
             center0,

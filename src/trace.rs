@@ -7,6 +7,7 @@ use math::*;
 use hitable::*;
 use camera::Camera;
 use winit_utils::*;
+use rendy::wsi::winit;
 
 use jobs::JobTask;
 use jobs::MultiSliceReadWriteLock;
@@ -36,7 +37,7 @@ impl SceneOutput {
 
 pub struct SceneState {
     pub cam: Camera,
-    pub world: Box<Hitable + Send + Sync + 'static>,
+    pub world: Box<dyn Hitable + Send + Sync + 'static>,
     pub window: winit::Window,
     pub time0: f64,
     pub time1: f64,
@@ -46,7 +47,7 @@ pub struct SceneState {
 }
 
 impl SceneState {
-    pub fn new(cam: Camera, world: Box<Hitable + Send + Sync + 'static>, window: winit::Window, time0: f64, time1: f64, 
+    pub fn new(cam: Camera, world: Box<dyn Hitable + Send + Sync + 'static>, window: winit::Window, time0: f64, time1: f64, 
                sky_brightness: f64, disable_emissive: bool, config: Config) -> SceneState {
             
         SceneState {
@@ -230,7 +231,7 @@ impl JobTask for TraceSceneBatchJob {
     }
 }
 
-fn color(r : &Ray, world: &Box<Hitable + Send + Sync + 'static>, depth: i32, t_min: f64, t_max: f64, sky_brightness: f64, disable_emissive: bool) -> Vec3 {
+fn color(r : &Ray, world: &Box<dyn Hitable + Send + Sync + 'static>, depth: i32, t_min: f64, t_max: f64, sky_brightness: f64, disable_emissive: bool) -> Vec3 {
     if let Some(hit_record) = world.hit(r, 0.001, f64::MAX) {
         if depth < 100 {
             let emitted = if !disable_emissive {hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p)} else {Vec3::from_float(0.0)};
@@ -250,7 +251,7 @@ fn color(r : &Ray, world: &Box<Hitable + Send + Sync + 'static>, depth: i32, t_m
 }
 
 pub fn reinhard_tonemap(colour: &Vec3) -> Vec3 {
-    let luminance: Vec3 = Vec3::new(0.2126, 0.7152, 0.0722);
+    let _luminance: Vec3 = Vec3::new(0.2126, 0.7152, 0.0722);
     static EXPOSURE: f64 = 1.5;
     let colour = colour * EXPOSURE;
     //&colour / (vec3::dot(&colour, &luminance) + 1.0)

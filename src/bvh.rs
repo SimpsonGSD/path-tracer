@@ -4,13 +4,13 @@ use math::*;
 use std::sync::Arc;
 
 pub struct BvhNode {
-    left: Arc<Hitable + Send + Sync + 'static>,
-    right: Arc<Hitable + Send + Sync + 'static>,
+    left: Arc<dyn Hitable + Send + Sync + 'static>,
+    right: Arc<dyn Hitable + Send + Sync + 'static>,
     bounding_box: AABB    
 }
 
 impl BvhNode {
-    pub fn from_list(list: Vec<Arc<Hitable + Send + Sync + 'static>>, time0: f64, time1: f64) -> BvhNode {
+    pub fn from_list(list: Vec<Arc<dyn Hitable + Send + Sync + 'static>>, time0: f64, time1: f64) -> BvhNode {
 
         let axis = (random::rand() * 3.0).floor() as u32; // SS: Choose random axis for simplicity
 
