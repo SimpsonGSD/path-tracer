@@ -5,7 +5,7 @@ use rendy::{
     hal::{pso::DescriptorPool, device::Device as _},
     resource::{
         Buffer, BufferInfo, DescriptorSetLayout, Escape, Filter, Handle, ImageView, ImageViewInfo,
-        Sampler, ViewKind, WrapMode,DescriptorSet,
+        Sampler, ViewKind, WrapMode,DescriptorSet, SamplerDesc,
     },
     shader::{PathBufShaderInfo, ShaderKind, SourceLanguage},
     texture::{image::ImageTextureConfig, Texture},
@@ -101,7 +101,9 @@ pub struct Pipeline<B: hal::Backend> {
     //sets: Vec<B::DescriptorSet>,
     //descriptor_pool: B::DescriptorPool,
     descriptor_set: Escape<DescriptorSet<B>>,
-    texture: Texture<B>,
+    image_sampler: Escape<Sampler<B>>,
+    image_view: Escape<ImageView<B>>,
+    //texture: Texture<B>,
     settings: Settings,
 }
 
@@ -182,44 +184,74 @@ where
         let settings: Settings = (&*aux).into();
 
         // This is how we can load an image and create a new texture.
-        let image_reader = BufReader::new(
-            File::open(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/assets/textures/logo.png"
-            ))
-            .map_err(|e| {
-                log::error!("Unable to open {}: {:?}", "/assets/textures/logo.png", e);
-                hal::pso::CreationError::Other
-            })?,
-        );
-
-        let texture_builder = rendy::texture::image::load_from_image(
-            image_reader,
-            ImageTextureConfig {
-                generate_mips: false,
-                ..Default::default()
-            },
-        )
-        .map_err(|e| { 
-            log::error!("Unable to load image: {:?}", e);
-            hal::pso::CreationError::Other
-        })?;
+       // let image_reader = BufReader::new(
+       //     File::open(concat!(
+       //         env!("CARGO_MANIFEST_DIR"),
+       //         "/assets/textures/logo.png"
+       //     ))
+       //     .map_err(|e| {
+       //         log::error!("Unable to open {}: {:?}", "/assets/textures/logo.png", e);
+       //         hal::pso::CreationError::Other
+       //     })?,
+       // );
+//
+       // let texture_builder = rendy::texture::image::load_from_image(
+       //     image_reader,
+       //     ImageTextureConfig {
+       //         generate_mips: false,
+       //         ..Default::default()
+       //     },
+       // )
+       // .map_err(|e| { 
+       //     log::error!("Unable to load image: {:?}", e);
+       //     hal::pso::CreationError::Other
+       // })?;
 
         let descriptor_set = factory
             .create_descriptor_set(set_layouts[0].clone())
             .unwrap();
 
-        let texture = texture_builder
-            .build(
-                ImageState {
-                    queue,
-                    stage: hal::pso::PipelineStage::FRAGMENT_SHADER,
-                    access: hal::image::Access::SHADER_READ,
-                    layout: hal::image::Layout::ShaderReadOnlyOptimal,
-                },
-                factory,
-            )
-            .unwrap();
+        //let texture = texture_builder
+        //    .build(
+        //        ImageState {
+        //            queue,
+        //            stage: hal::pso::PipelineStage::FRAGMENT_SHADER,
+        //            access: hal::image::Access::SHADER_READ,
+        //            layout: hal::image::Layout::ShaderReadOnlyOptimal,
+        //        },
+        //        factory,
+        //    )
+        //    .unwrap();
+
+        let image_sampler =
+            factory
+                .create_sampler(SamplerDesc::new(Filter::Nearest, WrapMode::Clamp))
+                .map_err(|e| {
+                    log::error!("Unable to create image sampler: {:?}", e);
+                    hal::pso::CreationError::Other
+                })?;
+
+        let image_handle = ctx
+            .get_image(images[0].id)
+            .ok_or(hal::pso::CreationError::Other)
+            .map_err(|e| {
+                log::error!("Unable to create image sampler: {:?}", e);
+                e
+            })?;
+
+       // factory.transition_image(image_handle.clone(), images[0].range.clone(), ImageState::new(, layout: rendy_core::hal::image::Layout), next: ImageState)
+
+       let image_view = factory
+           .create_image_view(
+               image_handle.clone(),
+               ImageViewInfo {
+                   view_kind: ViewKind::D2,
+                   format: hal::format::Format::Rgba32Sfloat,
+                   swizzle: hal::format::Swizzle::NO,
+                   range: images[0].range.clone(),
+               },
+           )
+           .expect("Could not create tonemapper input image view");
 
         let buffer = factory.create_buffer(
             BufferInfo {
@@ -240,7 +272,7 @@ where
                     binding: 0,
                     array_offset: 0,
                     descriptors: vec![hal::pso::Descriptor::Image(
-                        texture.view().raw(),
+                        image_view.raw(),
                         hal::image::Layout::ShaderReadOnlyOptimal,
                     )],
                 },
@@ -248,7 +280,7 @@ where
                     set: descriptor_set.raw(),
                     binding: 1,
                     array_offset: 0,
-                    descriptors: vec![hal::pso::Descriptor::Sampler(texture.sampler().raw())],
+                    descriptors: vec![hal::pso::Descriptor::Sampler(image_sampler.raw())],
                 },
                 hal::pso::DescriptorSetWrite {
                     set: descriptor_set.raw(),
@@ -287,21 +319,6 @@ where
        // };
 //
 
-       //let image_view = factory
-       //    .create_image_view(
-       //        image_handle.clone(),
-       //        ImageViewInfo {
-       //            view_kind: ViewKind::D2,
-       //            format: hal::format::Format::Rgba32Sfloat,
-       //            swizzle: hal::format::Swizzle::NO,
-       //            range: images[0].range.clone(),
-       //        },
-       //    )
-       //    .expect("Could not create tonemapper input image view");
-
-        
-
-        
 
        //unsafe {
        //    factory.device().write_descriptor_sets(vec![
@@ -368,9 +385,9 @@ where
         Ok(Pipeline {
             buffer,
             //sets,
-            texture,
-            //image_view,
-            //image_sampler,
+            //texture,
+            image_view,
+            image_sampler,
             //descriptor_pool,
             descriptor_set,
             settings,

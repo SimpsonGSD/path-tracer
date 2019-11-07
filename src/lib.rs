@@ -37,7 +37,7 @@ use rendy::{
     command::{Graphics, Supports},
     factory::{Factory, ImageState},
     graph::{present::PresentNode, render::*, GraphBuilder},
-    init::AnyWindowedRendy,
+    resource::{BufferInfo}
 };
 
 use rendy::init::winit;
@@ -129,7 +129,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Warn)
-        .filter_module("rendy", log::LevelFilter::Info)
+        .filter_module("rendy", log::LevelFilter::Trace)
         .init();
 
     let nx: u32 = 1280;
@@ -168,8 +168,29 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         .as_slice()[0]
         .id();
 
-    //rendy.factory.maintain(&mut rendy.families);
+    let source_buffer_size: u64 = (image_size.0 * image_size.1) as u64 * 3 * std::mem::size_of::<f32>() as u64;
+    let source_buffer = rendy.factory
+        .create_buffer(
+            BufferInfo {
+                size: source_buffer_size,
+                usage: hal::buffer::Usage::TRANSFER_SRC
+            },
+            rendy::memory::Upload
+        )
+        .map_err(|_| failure::err_msg("Unable to create source buffer"))?;
+
     let mut graph_builder = GraphBuilder::<Backend, Aux>::new();
+    let source_image = graph_builder.create_image(
+        hal::image::Kind::D2(image_size.0, image_size.1, 1, 1), 
+        1, 
+        hal::format::Format::Rgba32Sfloat, 
+        Some(hal::command::ClearValue {
+            color: hal::command::ClearColor {
+                float32: [1.0, 1.0, 1.0, 1.0],
+            },
+        }),
+    );
+
     let color = graph_builder.create_image(
         hal::image::Kind::D2(image_size.0, image_size.1, 1, 1),
         1,
@@ -182,9 +203,10 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     );
    let tonemap_pass = graph_builder.add_node(
        node::tonemap::Pipeline::builder()
-           .into_subpass()
-           .with_color(color)
-           .into_pass(),
+            .with_image(source_image)
+            .into_subpass()
+            .with_color(color)
+            .into_pass(),
    );
     graph_builder.add_node(PresentNode::builder(&rendy.factory, surface, color).with_dependency(tonemap_pass));
     
