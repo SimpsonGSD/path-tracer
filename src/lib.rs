@@ -112,6 +112,13 @@ impl Config {
     }
 }
 
+#[derive(Default)]
+pub struct Aux {
+    pub frames: usize,
+    pub hw_alignment: u64,
+    pub tonemapper_args: node::tonemap::TonemapperArgs
+}
+
 #[cfg(not(any(feature = "dx12", feature = "metal", feature = "vulkan")))]
 pub fn run(config: Config) -> Result<(), failure::Error>{
     Err(failure::err_msg("run with --feature dx/metal/vulkan"))
@@ -162,7 +169,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         .id();
 
     //rendy.factory.maintain(&mut rendy.families);
-    let mut graph_builder = GraphBuilder::<Backend, node::Aux>::new();
+    let mut graph_builder = GraphBuilder::<Backend, Aux>::new();
     let color = graph_builder.create_image(
         hal::image::Kind::D2(image_size.0, image_size.1, 1, 1),
         1,
@@ -173,20 +180,19 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             },
         }),
     );
-    let tonemap_pass = graph_builder.add_node(
-        node::tonemap::Pipeline::builder()
-            .into_subpass()
-            .with_color(color)
-            .into_pass(),
-    );
+   let tonemap_pass = graph_builder.add_node(
+       node::tonemap::Pipeline::builder()
+           .into_subpass()
+           .with_color(color)
+           .into_pass(),
+   );
     graph_builder.add_node(PresentNode::builder(&rendy.factory, surface, color).with_dependency(tonemap_pass));
     
-    let mut aux = node::Aux {
+    let mut aux = Aux {
         frames: FRAMES_IN_FLIGHT as usize,
         hw_alignment,
         tonemapper_args: node::tonemap::TonemapperArgs {
-            exposure: 1.0,
-            clear_colour: [1.0, 0.0, 0.0],
+            clear_colour_and_exposure: [0.0, 1.0, 0.0, 1.0],
         }
     };
 
@@ -392,14 +398,13 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
             // App logic - modifying of shared state allowed
             {
-                let mut scene_state_writable = scene_state.write();
                 let mut clear_scene = false;
-
-                // update time
-                scene_state_writable.time0 = scene_state_writable.time1;
-                scene_state_writable.time1 += frame_time;
-
-                let dpi = scene_state_writable.window.hidpi_factor();
+                {
+                    let mut scene_state_writable = scene_state.write();
+                    // update time
+                    scene_state_writable.time0 = scene_state_writable.time1;
+                    scene_state_writable.time1 += frame_time;
+                }
 
                 // TODO(SS): debouncing, needs moving to struct
                 let mouse_x_last_frame = mouse_x;
@@ -416,62 +421,74 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 use winit::event::MouseButton;
                 use winit::event::ElementState;
                 match event {
-                Event::WindowEvent { event, .. } => match event {
-                        WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
-                            Some(VirtualKeyCode::Escape) => *control_flow = ControlFlow::Exit,
-                            Some(VirtualKeyCode::W) => move_forward = true,
-                            Some(VirtualKeyCode::S) => move_backward = true,
-                            Some(VirtualKeyCode::D) => move_right = true,
-                            Some(VirtualKeyCode::A) => move_left = true,
-                            Some(VirtualKeyCode::Q) => move_down = true,
-                            Some(VirtualKeyCode::E) => move_up = true,
-                            Some(VirtualKeyCode::Right) => look_right = true,
-                            Some(VirtualKeyCode::Left) => look_left = true,
-                            Some(VirtualKeyCode::Up) => look_up = true,
-                            Some(VirtualKeyCode::Down) => look_down = true,
-                            Some(VirtualKeyCode::O) => {
-                                clear_scene = true;
-                                scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
+                    Event::WindowEvent { event, .. } => {
+                        match event {
+                            WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
+                                Some(VirtualKeyCode::Escape) => *control_flow = ControlFlow::Exit,
+                                Some(VirtualKeyCode::W) => move_forward = true,
+                                Some(VirtualKeyCode::S) => move_backward = true,
+                                Some(VirtualKeyCode::D) => move_right = true,
+                                Some(VirtualKeyCode::A) => move_left = true,
+                                Some(VirtualKeyCode::Q) => move_down = true,
+                                Some(VirtualKeyCode::E) => move_up = true,
+                                Some(VirtualKeyCode::Right) => look_right = true,
+                                Some(VirtualKeyCode::Left) => look_left = true,
+                                Some(VirtualKeyCode::Up) => look_up = true,
+                                Some(VirtualKeyCode::Down) => look_down = true,
+                                Some(VirtualKeyCode::O) => {
+                                    clear_scene = true;
+                                    let mut scene_state_writable = scene_state.write();
+                                    scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
+                                },
+                                Some(VirtualKeyCode::P) => {
+                                    clear_scene = true;
+                                    let mut scene_state_writable = scene_state.write();
+                                    scene_state_writable.sky_brightness += 0.05;
+                                },
+                                Some(VirtualKeyCode::B) => b_down = true,
+                                _ => {},
                             },
-                            Some(VirtualKeyCode::P) => {
-                                clear_scene = true;
-                                scene_state_writable.sky_brightness += 0.05;
+                            WindowEvent::MouseInput { state, button, .. } => {
+                                if button == MouseButton::Left {
+                                    left_mouse_down = if state == ElementState::Pressed {true} else {false};
+                                }
+                                if button == MouseButton::Right {
+                                    right_mouse_down = if state == ElementState::Pressed {true} else {false};
+                                }
                             },
-                            Some(VirtualKeyCode::B) => b_down = true,
+                            WindowEvent::CursorMoved { position, .. } => {
+                                // Note(SS): This position is not ideal for mouse movement as it contains OS overrides like mouse accel.
+                                let dpi = scene_state.read().window.hidpi_factor();
+                                let physical_position = position.to_physical(dpi);
+                                mouse_x = physical_position.x;
+                                mouse_y = -physical_position.y;
+                            },
+                            WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                        //   WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size),
                             _ => {},
-                        },
-                        WindowEvent::MouseInput { state, button, .. } => {
-                            if button == MouseButton::Left {
-                                left_mouse_down = if state == ElementState::Pressed {true} else {false};
-                            }
-                            if button == MouseButton::Right {
-                                right_mouse_down = if state == ElementState::Pressed {true} else {false};
-                            }
-                        },
-                        WindowEvent::CursorMoved { position, .. } => {
-                            // Note(SS): This position is not ideal for mouse movement as it contains OS overrides like mouse accel.
-                            let physical_position = position.to_physical(dpi);
-                            mouse_x = physical_position.x;
-                            mouse_y = -physical_position.y;
-                        },
-                        WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                     //   WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size),
-                        _ => {},
+                        }
                     },
                     Event::EventsCleared => {
-                            //+ Rendy Integration
-                            rendy.factory.maintain(&mut rendy.families);
-                            if let Some(ref mut frame_graph) = frame_graph {
-                                frame_graph.run(&mut rendy.factory, &mut rendy.families, &mut aux);
-                            }
-                            frame_counter += 1;
-                            //update_window_framebuffer(&scene_state_readable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
-                            //- Rendy Integration
+
+                       // let job_counter = Jobs::dispatch_jobs(&jobs);
+                      //  Jobs::wait_for_counter(&job_counter, 0);
+
+                        let scene_state_readable = scene_state.read();
+
+                        //+ Rendy Integration
+                        rendy.factory.maintain(&mut rendy.families);
+                        if let Some(ref mut frame_graph) = frame_graph {
+                            frame_graph.run(&mut rendy.factory, &mut rendy.families, &mut aux);
                         }
+                        frame_counter += 1;
+                        //update_window_framebuffer(&scene_state_readable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+                        //- Rendy Integration
+                    }
                     _ => {},
                 }
 
                 if b_down_last_frame && !b_down {
+                    let mut scene_state_writable = scene_state.write();
                     scene_state_writable.disable_emissive = !scene_state_writable.disable_emissive;
                     clear_scene = true;
                 }
@@ -479,6 +496,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 // handle input for camera
                 // TODO(SS): Move state into app struct and move to function just to keep this loop tidier
                 {
+                    let mut scene_state_writable = scene_state.write();
                     let cam = &mut scene_state_writable.cam;
                     let mut camera_moved = false;
                     if move_forward {
@@ -594,9 +612,6 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                     }
                 }
             }
-
-         //   let job_counter = Jobs::dispatch_jobs(&jobs);
-         //   Jobs::wait_for_counter(&job_counter, 0);
 
             let scene_state_readable = scene_state.read();
 

@@ -1,20 +1,22 @@
 use rendy::{
     command::{QueueId, RenderPassEncoder},
-    factory::Factory,
+    factory::{Factory, ImageState},
     graph::{render::*, GraphContext, ImageAccess, NodeBuffer, NodeImage},
     hal::{pso::DescriptorPool, device::Device as _},
     resource::{
         Buffer, BufferInfo, DescriptorSetLayout, Escape, Filter, Handle, ImageView, ImageViewInfo,
-        Sampler, ViewKind, WrapMode,
+        Sampler, ViewKind, WrapMode,DescriptorSet,
     },
     shader::{PathBufShaderInfo, ShaderKind, SourceLanguage},
+    texture::{image::ImageTextureConfig, Texture},
 };
 
 use rendy::hal;
 
 use std::mem::size_of;
+use std::{fs::File, io::BufReader};
 
-use crate::node::Aux;
+use crate::Aux;
 
 lazy_static::lazy_static! {
     static ref VERTEX: PathBufShaderInfo = PathBufShaderInfo::new(
@@ -40,13 +42,12 @@ lazy_static::lazy_static! {
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct TonemapperArgs {
-    pub exposure: f32,
-    pub clear_colour: [f32; 3],
+    pub clear_colour_and_exposure: [f32; 4],
 }
 
 impl std::fmt::Display for TonemapperArgs {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Exposure: {}", self.exposure)
+        write!(f, "Clear Colour{}, Exposure: {}", self.clear_colour_and_exposure[0], self.clear_colour_and_exposure[3])
     }
 }
 
@@ -97,10 +98,10 @@ pub struct PipelineDesc;
 #[derive(Debug)]
 pub struct Pipeline<B: hal::Backend> {
     buffer: Escape<Buffer<B>>,
-    sets: Vec<B::DescriptorSet>,
-    descriptor_pool: B::DescriptorPool,
-  //  image_sampler: Escape<Sampler<B>>,
-  //  image_view: Escape<ImageView<B>>,
+    //sets: Vec<B::DescriptorSet>,
+    //descriptor_pool: B::DescriptorPool,
+    descriptor_set: Escape<DescriptorSet<B>>,
+    texture: Texture<B>,
     settings: Settings,
 }
 
@@ -111,14 +112,14 @@ where
 {
     type Pipeline = Pipeline<B>;
 
-  // fn images(&self) -> Vec<ImageAccess> {
-  //     vec![ImageAccess {
-  //         access: hal::image::Access::SHADER_READ,
-  //         usage: hal::image::Usage::SAMPLED,
-  //         layout: hal::image::Layout::ShaderReadOnlyOptimal,
-  //         stages: hal::pso::PipelineStage::FRAGMENT_SHADER,
-  //     }]
-  // }
+    fn images(&self) -> Vec<ImageAccess> {
+        vec![ImageAccess {
+            access: hal::image::Access::SHADER_READ,
+            usage: hal::image::Usage::SAMPLED,
+            layout: hal::image::Layout::ShaderReadOnlyOptimal,
+            stages: hal::pso::PipelineStage::FRAGMENT_SHADER,
+        }]
+    }
 
     fn depth_stencil(&self) -> Option<hal::pso::DepthStencilDesc> {
         None
@@ -136,20 +137,20 @@ where
         Layout {
             sets: vec![SetLayout {
                 bindings: vec![
-                    //hal::pso::DescriptorSetLayoutBinding {
-                    //    binding: 0,
-                    //    ty: hal::pso::DescriptorType::Sampler,
-                    //    count: 1,
-                    //    stage_flags: hal::pso::ShaderStageFlags::FRAGMENT,
-                    //    immutable_samplers: false,
-                    //},
-                    //hal::pso::DescriptorSetLayoutBinding {
-                    //    binding: 1,
-                    //    ty: hal::pso::DescriptorType::SampledImage,
-                    //    count: 1,
-                    //    stage_flags: hal::pso::ShaderStageFlags::FRAGMENT,
-                    //    immutable_samplers: false,
-                    //},
+                    hal::pso::DescriptorSetLayoutBinding {
+                        binding: 0,
+                        ty: hal::pso::DescriptorType::SampledImage,
+                        count: 1,
+                        stage_flags: hal::pso::ShaderStageFlags::FRAGMENT,
+                        immutable_samplers: false,
+                    },
+                    hal::pso::DescriptorSetLayoutBinding {
+                        binding: 1,
+                        ty: hal::pso::DescriptorType::Sampler,
+                        count: 1,
+                        stage_flags: hal::pso::ShaderStageFlags::FRAGMENT,
+                        immutable_samplers: false,
+                    },
                     hal::pso::DescriptorSetLayoutBinding {
                         binding: 2,
                         ty: hal::pso::DescriptorType::UniformBuffer,
@@ -167,7 +168,7 @@ where
         self,
         ctx: &GraphContext<B>,
         factory: &mut Factory<B>,
-        _queue: QueueId,
+        queue: QueueId,
         aux: &Aux,
         buffers: Vec<NodeBuffer>,
         images: Vec<NodeImage>,
@@ -180,45 +181,45 @@ where
         let frames = aux.frames;
         let settings: Settings = (&*aux).into();
 
-        let mut descriptor_pool = unsafe {
-            factory.create_descriptor_pool(
-                frames,
-                vec![
-                   //hal::pso::DescriptorRangeDesc {
-                   //    ty: hal::pso::DescriptorType::Sampler,
-                   //    count: frames,
-                   //},
-                   //hal::pso::DescriptorRangeDesc {
-                   //    ty: hal::pso::DescriptorType::SampledImage,
-                   //    count: frames,
-                   //},
-                    hal::pso::DescriptorRangeDesc {
-                        ty: hal::pso::DescriptorType::UniformBuffer,
-                        count: frames,
-                    },
-                ],
-                hal::pso::DescriptorPoolCreateFlags::empty(),
-            )?
-        };
+        // This is how we can load an image and create a new texture.
+        let image_reader = BufReader::new(
+            File::open(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/assets/textures/logo.png"
+            ))
+            .map_err(|e| {
+                log::error!("Unable to open {}: {:?}", "/assets/textures/logo.png", e);
+                hal::pso::CreationError::Other
+            })?,
+        );
 
-       //let image_sampler =
-       //    factory.create_sampler(SamplerInfo::new(Filter::Nearest, WrapMode::Clamp))?;
+        let texture_builder = rendy::texture::image::load_from_image(
+            image_reader,
+            ImageTextureConfig {
+                generate_mips: false,
+                ..Default::default()
+            },
+        )
+        .map_err(|e| { 
+            log::error!("Unable to load image: {:?}", e);
+            hal::pso::CreationError::Other
+        })?;
 
-       //let image_handle = ctx
-       //    .get_image(images[0].id)
-       //    .ok_or(failure::format_err!("Tonemapper HDR image missing"))?;
+        let descriptor_set = factory
+            .create_descriptor_set(set_layouts[0].clone())
+            .unwrap();
 
-       //let image_view = factory
-       //    .create_image_view(
-       //        image_handle.clone(),
-       //        ImageViewInfo {
-       //            view_kind: ViewKind::D2,
-       //            format: hal::format::Format::Rgba32Sfloat,
-       //            swizzle: hal::format::Swizzle::NO,
-       //            range: images[0].range.clone(),
-       //        },
-       //    )
-       //    .expect("Could not create tonemapper input image view");
+        let texture = texture_builder
+            .build(
+                ImageState {
+                    queue,
+                    stage: hal::pso::PipelineStage::FRAGMENT_SHADER,
+                    access: hal::image::Access::SHADER_READ,
+                    layout: hal::image::Layout::ShaderReadOnlyOptimal,
+                },
+                factory,
+            )
+            .unwrap();
 
         let buffer = factory.create_buffer(
             BufferInfo {
@@ -232,53 +233,146 @@ where
             hal::pso::CreationError::Other
         })?;
 
-        let mut sets = Vec::with_capacity(frames);
-        for index in 0..frames {
-            unsafe {
-                let set = descriptor_pool
-                    .allocate_set(&set_layouts[0].raw())
-                    .map_err(|e| {
-                        log::error!("Unable to create descriptor pool: {:?}", e);
-                        hal::pso::CreationError::Other
-                    })?;
-                factory.device().write_descriptor_sets(vec![
-                   //hal::pso::DescriptorSetWrite {
-                   //    set: &set,
-                   //    binding: 0,
-                   //    array_offset: 0,
-                   //    descriptors: Some(hal::pso::Descriptor::Sampler(image_sampler.raw())),
-                   //},
-                   //hal::pso::DescriptorSetWrite {
-                   //    set: &set,
-                   //    binding: 1,
-                   //    array_offset: 0,
-                   //    descriptors: Some(hal::pso::Descriptor::Image(
-                   //        image_view.raw(),
-                   //        hal::image::Layout::ShaderReadOnlyOptimal,
-                   //    )),
-                   //},
-                    hal::pso::DescriptorSetWrite {
-                        set: &set,
-                        binding: 2,
-                        array_offset: 0,
-                        descriptors: Some(hal::pso::Descriptor::Buffer(
-                            buffer.raw(),
-                            Some(settings.uniform_offset(index as u64))
-                                ..Some(
-                                    settings.uniform_offset(index as u64) + Settings::UNIFORM_SIZE,
-                                ),
-                        )),
-                    },
-                ]);
-                sets.push(set);
-            }
+        unsafe {
+            factory.device().write_descriptor_sets(vec![
+                hal::pso::DescriptorSetWrite {
+                    set: descriptor_set.raw(),
+                    binding: 0,
+                    array_offset: 0,
+                    descriptors: vec![hal::pso::Descriptor::Image(
+                        texture.view().raw(),
+                        hal::image::Layout::ShaderReadOnlyOptimal,
+                    )],
+                },
+                hal::pso::DescriptorSetWrite {
+                    set: descriptor_set.raw(),
+                    binding: 1,
+                    array_offset: 0,
+                    descriptors: vec![hal::pso::Descriptor::Sampler(texture.sampler().raw())],
+                },
+                hal::pso::DescriptorSetWrite {
+                    set: descriptor_set.raw(),
+                    binding: 2,
+                    array_offset: 0,
+                    descriptors: vec![hal::pso::Descriptor::Buffer(
+                        buffer.raw(),
+                        Some(settings.uniform_offset(0))
+                            ..Some(
+                                settings.uniform_offset(0) + Settings::UNIFORM_SIZE,
+                            ),
+                    )],
+                },
+            ]);
         }
+
+       // let mut descriptor_pool = unsafe {
+       //     factory.create_descriptor_pool(
+       //         frames,
+       //         vec![
+       //            hal::pso::DescriptorRangeDesc {
+       //                ty: hal::pso::DescriptorType::Sampler,
+       //                count: frames,
+       //            },
+       //            hal::pso::DescriptorRangeDesc {
+       //                ty: hal::pso::DescriptorType::SampledImage,
+       //                count: frames,
+       //            },
+       //             hal::pso::DescriptorRangeDesc {
+       //                 ty: hal::pso::DescriptorType::UniformBuffer,
+       //                 count: frames,
+       //             },
+       //         ],
+       //         hal::pso::DescriptorPoolCreateFlags::empty(),
+       //     )?
+       // };
+//
+
+       //let image_view = factory
+       //    .create_image_view(
+       //        image_handle.clone(),
+       //        ImageViewInfo {
+       //            view_kind: ViewKind::D2,
+       //            format: hal::format::Format::Rgba32Sfloat,
+       //            swizzle: hal::format::Swizzle::NO,
+       //            range: images[0].range.clone(),
+       //        },
+       //    )
+       //    .expect("Could not create tonemapper input image view");
+
+        
+
+        
+
+       //unsafe {
+       //    factory.device().write_descriptor_sets(vec![
+       //        hal::pso::DescriptorSetWrite {
+       //            set: descriptor_set.raw(),
+       //            binding: 0,
+       //            array_offset: 0,
+       //            descriptors: vec![hal::pso::Descriptor::Image(
+       //                texture.view().raw(),
+       //                hal::image::Layout::ShaderReadOnlyOptimal,
+       //            )],
+       //        },
+       //        hal::pso::DescriptorSetWrite {
+       //            set: descriptor_set.raw(),
+       //            binding: 1,
+       //            array_offset: 0,
+       //            descriptors: vec![hal::pso::Descriptor::Sampler(texture.sampler().raw())],
+       //        },
+       //    ]);
+       //}
+
+       //let mut sets = Vec::with_capacity(frames);
+       //for index in 0..frames {
+       //    unsafe {
+       //        let set = descriptor_pool
+       //            .allocate_set(&set_layouts[0].raw())
+       //            .map_err(|e| {
+       //                log::error!("Unable to create descriptor pool: {:?}", e);
+       //                hal::pso::CreationError::Other
+       //            })?;
+       //        factory.device().write_descriptor_sets(vec![
+       //           //hal::pso::DescriptorSetWrite {
+       //           //    set: &set,
+       //           //    binding: 0,
+       //           //    array_offset: 0,
+       //           //    descriptors: Some(hal::pso::Descriptor::Sampler(image_sampler.raw())),
+       //           //},
+       //           //hal::pso::DescriptorSetWrite {
+       //           //    set: &set,
+       //           //    binding: 1,
+       //           //    array_offset: 0,
+       //           //    descriptors: Some(hal::pso::Descriptor::Image(
+       //           //        image_view.raw(),
+       //           //        hal::image::Layout::ShaderReadOnlyOptimal,
+       //           //    )),
+       //           //},
+       //            hal::pso::DescriptorSetWrite {
+       //                set: &set,
+       //                binding: 2,
+       //                array_offset: 0,
+       //                descriptors: Some(hal::pso::Descriptor::Buffer(
+       //                    buffer.raw(),
+       //                    Some(settings.uniform_offset(index as u64))
+       //                        ..Some(
+       //                            settings.uniform_offset(index as u64) + Settings::UNIFORM_SIZE,
+       //                        ),
+       //                )),
+       //            },
+       //        ]);
+       //        sets.push(set);
+       //    }
+       //}
+
         Ok(Pipeline {
             buffer,
-            sets,
+            //sets,
+            texture,
             //image_view,
             //image_sampler,
-            descriptor_pool,
+            //descriptor_pool,
+            descriptor_set,
             settings,
         })
     }
@@ -323,7 +417,8 @@ where
             encoder.bind_graphics_descriptor_sets(
                 layout,
                 0,
-                Some(&self.sets[index]),
+                std::iter::once(self.descriptor_set.raw()),
+                //Some(&self.sets[index]),
                 std::iter::empty(),
             );
             // This is a trick from Sascha Willems which uses just the gl_VertexIndex
@@ -336,8 +431,8 @@ where
 
     fn dispose(mut self, factory: &mut Factory<B>, _aux: &Aux) {
         unsafe {
-            self.descriptor_pool.reset();
-            factory.device().destroy_descriptor_pool(self.descriptor_pool);
+            //self.descriptor_pool.reset();
+            //factory.device().destroy_descriptor_pool(self.descriptor_pool);
         }
     }
 }
