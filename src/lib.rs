@@ -142,7 +142,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     let mut rendy: rendy::init::Rendy<Backend> = {
         let config: rendy::factory::Config = Default::default();
         rendy::init::Rendy::<Backend>::init(&config).map_err(|_|failure::err_msg("Could not initialise rendy"))?
-        //AnyWindowedRendy::init_auto(&config, window, &events_loop).unwrap()
+      //  AnyWindowedRendy::init_auto(&config, window, &events_loop).unwrap()
     };
     let surface = rendy.factory.create_surface(&window).map_err(|_|failure::err_msg("Could create backbuffer surface"))?;
     let hw_alignment = hal::adapter::PhysicalDevice::limits(rendy.factory.physical())
@@ -161,7 +161,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         .as_slice()[0]
         .id();
 
-    rendy.factory.maintain(&mut rendy.families);
+    //rendy.factory.maintain(&mut rendy.families);
     let mut graph_builder = GraphBuilder::<Backend, node::Aux>::new();
     let color = graph_builder.create_image(
         hal::image::Kind::D2(image_size.0, image_size.1, 1, 1),
@@ -193,6 +193,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     let mut frame_graph = graph_builder
         .with_frames_in_flight(FRAMES_IN_FLIGHT)
         .build(&mut rendy.factory, &mut rendy.families, &mut aux).map_err(|_|failure::err_msg("Could not build graph"))?;
+
     let mut frame_graph = Some(frame_graph);
     //- Rendy integration
 
@@ -231,7 +232,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     let buffer_size_bytes = (nx*ny*3) as usize;
     let bgr_texture = MultiSliceReadWriteLock::new(vec![0.0_f32; buffer_size_bytes]);
-    update_window_framebuffer(&window, &mut convert_to_u8_and_gamma_correct(bgr_texture.read()), image_size);
+   // update_window_framebuffer(&window, &mut convert_to_u8_and_gamma_correct(bgr_texture.read()), image_size);
 
     let num_cores = num_cpus::get();
     println!("Running on {} cores", num_cores);
@@ -365,7 +366,6 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         const CAM_SPEED: f64 = 4.0;
         const MOUSE_LOOK_SPEED: f64 = 0.4;
         //const MOUSE_THRESHOLD: 
-        let mut keep_running = true;
         let mut fps = 0.0;
         let mut move_forward = false;
         let mut frame_time = 1.0 / 60.0;
@@ -383,6 +383,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         let mut mouse_x = 0.0;
         let mut mouse_y = 0.0;
         let mut b_down  = false;
+        let mut frame_counter = 0;
 
         events_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
@@ -417,7 +418,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 match event {
                 Event::WindowEvent { event, .. } => match event {
                         WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
-                            Some(VirtualKeyCode::Escape) => keep_running = false,
+                            Some(VirtualKeyCode::Escape) => *control_flow = ControlFlow::Exit,
                             Some(VirtualKeyCode::W) => move_forward = true,
                             Some(VirtualKeyCode::S) => move_backward = true,
                             Some(VirtualKeyCode::D) => move_right = true,
@@ -454,7 +455,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                             mouse_y = -physical_position.y;
                         },
                         WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                        WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size),
+                     //   WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size),
                         _ => {},
                     },
                     Event::EventsCleared => {
@@ -463,6 +464,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                             if let Some(ref mut frame_graph) = frame_graph {
                                 frame_graph.run(&mut rendy.factory, &mut rendy.families, &mut aux);
                             }
+                            frame_counter += 1;
                             //update_window_framebuffer(&scene_state_readable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
                             //- Rendy Integration
                         }
@@ -593,8 +595,8 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 }
             }
 
-            let job_counter = Jobs::dispatch_jobs(&jobs);
-            Jobs::wait_for_counter(&job_counter, 0);
+         //   let job_counter = Jobs::dispatch_jobs(&jobs);
+         //   Jobs::wait_for_counter(&job_counter, 0);
 
             let scene_state_readable = scene_state.read();
 
@@ -602,7 +604,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
             match SIXTY_HZ.checked_sub(start_timer.elapsed()) {
                 Some(sleep_time) => {
-                    thread::sleep(sleep_time);
+              //      thread::sleep(sleep_time);
                 },
                 None => {}
             };
@@ -611,7 +613,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             frame_time = frame_duration.as_secs() as f64 + frame_duration.subsec_nanos() as f64 * 1e-9;
 
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
-            scene_state_readable.window.set_title(&format!("Path Tracer: FPS = {}  |  Sky Brightness = {}; Emissive = {}  |  {}", fps as i32,
+            scene_state_readable.window.set_title(&format!("Path Tracer: FPS = {} | Frame = {}  |  Sky Brightness = {}; Emissive = {}  |  {}", fps as i32, frame_counter,
                                                             scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, controls_string));
 
             if *control_flow == ControlFlow::Exit {

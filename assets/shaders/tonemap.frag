@@ -17,5 +17,6 @@ void main() {
     vec2 uv = f_uv;
     uv.y = 1.0 - uv.y;
 
-    color = vec4(clear_colour, 1.0);
+    //color = vec4(clear_colour, 1.0);
+    color = vec4(1.0,0.0,0.0, 1.0);
 }
