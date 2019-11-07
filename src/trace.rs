@@ -2,12 +2,12 @@ use std::f64;
 use std::sync::Arc;
 use parking_lot::{RwLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use rendy::init::winit;
 
 use math::*;
 use hitable::*;
 use camera::Camera;
 use winit_utils::*;
-use rendy::wsi::winit;
 
 use jobs::JobTask;
 use jobs::MultiSliceReadWriteLock;
@@ -38,7 +38,7 @@ impl SceneOutput {
 pub struct SceneState {
     pub cam: Camera,
     pub world: Box<dyn Hitable + Send + Sync + 'static>,
-    pub window: winit::Window,
+    pub window: winit::window::Window,
     pub time0: f64,
     pub time1: f64,
     pub sky_brightness: f64,
@@ -47,7 +47,7 @@ pub struct SceneState {
 }
 
 impl SceneState {
-    pub fn new(cam: Camera, world: Box<dyn Hitable + Send + Sync + 'static>, window: winit::Window, time0: f64, time1: f64, 
+    pub fn new(cam: Camera, world: Box<dyn Hitable + Send + Sync + 'static>, window: winit::window::Window, time0: f64, time1: f64, 
                sky_brightness: f64, disable_emissive: bool, config: Config) -> SceneState {
             
         SceneState {
@@ -121,7 +121,7 @@ impl TraceSceneBatchJob {
 
     fn trace(&mut self) {
 
-        let update_window_and_release_lock = |buffer: &mut Vec<u8>, window: &winit::Window, image_start_xy: (u32,u32), num_pixels_xy: (u32,u32), window_lock: &AtomicBool| {
+        let update_window_and_release_lock = |buffer: &mut Vec<u8>, window: &winit::window::Window, image_start_xy: (u32,u32), num_pixels_xy: (u32,u32), window_lock: &AtomicBool| {
             // TODO(SS): Optimise so we are only copying the changed buffer parts
             update_window_framebuffer_rect(&window, buffer, image_start_xy, num_pixels_xy);
             window_lock.store(false, Ordering::Release);

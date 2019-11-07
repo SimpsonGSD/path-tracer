@@ -2,10 +2,10 @@ use rendy::{
     command::{QueueId, RenderPassEncoder},
     factory::Factory,
     graph::{render::*, GraphContext, ImageAccess, NodeBuffer, NodeImage},
-    hal::{pso::DescriptorPool, Device},
+    hal::{pso::DescriptorPool, device::Device as _},
     resource::{
         Buffer, BufferInfo, DescriptorSetLayout, Escape, Filter, Handle, ImageView, ImageViewInfo,
-        Sampler, SamplerInfo, ViewKind, WrapMode,
+        Sampler, ViewKind, WrapMode,
     },
     shader::{PathBufShaderInfo, ShaderKind, SourceLanguage},
 };
@@ -172,7 +172,7 @@ where
         buffers: Vec<NodeBuffer>,
         images: Vec<NodeImage>,
         set_layouts: &[Handle<DescriptorSetLayout<B>>],
-    ) -> Result<Pipeline<B>, failure::Error> {
+    ) -> Result<Pipeline<B>, hal::pso::CreationError> {
         assert!(buffers.is_empty());
         //assert!(images.len() == 1);
         assert!(set_layouts.len() == 1);
@@ -226,13 +226,22 @@ where
                 usage: hal::buffer::Usage::UNIFORM,
             },
             rendy::memory::MemoryUsageValue::Dynamic,
-        )?;
+        )
+        .map_err(|e| {
+            log::error!("Unable to create uniform buffer: {:?}", e);
+            hal::pso::CreationError::Other
+        })?;
 
         let mut sets = Vec::with_capacity(frames);
         for index in 0..frames {
             unsafe {
-                let set = descriptor_pool.allocate_set(&set_layouts[0].raw())?;
-                factory.write_descriptor_sets(vec![
+                let set = descriptor_pool
+                    .allocate_set(&set_layouts[0].raw())
+                    .map_err(|e| {
+                        log::error!("Unable to create descriptor pool: {:?}", e);
+                        hal::pso::CreationError::Other
+                    })?;
+                factory.device().write_descriptor_sets(vec![
                    //hal::pso::DescriptorSetWrite {
                    //    set: &set,
                    //    binding: 0,
@@ -328,7 +337,7 @@ where
     fn dispose(mut self, factory: &mut Factory<B>, _aux: &Aux) {
         unsafe {
             self.descriptor_pool.reset();
-            factory.destroy_descriptor_pool(self.descriptor_pool);
+            factory.device().destroy_descriptor_pool(self.descriptor_pool);
         }
     }
 }

@@ -37,12 +37,17 @@ use rendy::{
     command::{Graphics, Supports},
     factory::{Factory, ImageState},
     graph::{present::PresentNode, render::*, GraphBuilder},
+    init::AnyWindowedRendy,
 };
 
+use rendy::init::winit;
 use rendy::hal;
-use rendy::wsi::winit;
-use winit::{ControlFlow, Event, WindowBuilder, WindowEvent};
-use winit::dpi::LogicalSize;
+use winit::{ 
+    event::{Event, WindowEvent, VirtualKeyCode},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+    dpi::LogicalSize,
+};
 use winit_utils::*;
 
 // module imports
@@ -128,20 +133,21 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     let window_width = nx as f64;
     let window_height = ny as f64;
 
-    let mut events_loop = winit::EventsLoop::new();
+    let events_loop = winit::event_loop::EventLoop::new();
     let builder = WindowBuilder::new();
-    let window = builder.with_dimensions(LogicalSize{width: window_width, height: window_height}).build(&events_loop).unwrap();
+    let window = builder.with_inner_size(LogicalSize{width: window_width, height: window_height}).build(&events_loop).unwrap();
     window.set_title("Path Tracer");
 
     //+ Rendy integration
-    let (mut factory, mut families): (Factory<Backend>, _) = {
+    let mut rendy: rendy::init::Rendy<Backend> = {
         let config: rendy::factory::Config = Default::default();
-        rendy::factory::init(config)?
+        rendy::init::Rendy::<Backend>::init(&config).map_err(|_|failure::err_msg("Could not initialise rendy"))?
+        //AnyWindowedRendy::init_auto(&config, window, &events_loop).unwrap()
     };
-    let surface = factory.create_surface(&window);
-    let hw_alignment = hal::adapter::PhysicalDevice::limits(factory.physical())
+    let surface = rendy.factory.create_surface(&window).map_err(|_|failure::err_msg("Could create backbuffer surface"))?;
+    let hw_alignment = hal::adapter::PhysicalDevice::limits(rendy.factory.physical())
         .min_uniform_buffer_offset_alignment;
-    let queue = families
+    let queue = rendy.families
         .as_slice()
         .iter()
         .find(|family| {
@@ -155,13 +161,17 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         .as_slice()[0]
         .id();
 
-    factory.maintain(&mut families);
+    rendy.factory.maintain(&mut rendy.families);
     let mut graph_builder = GraphBuilder::<Backend, node::Aux>::new();
     let color = graph_builder.create_image(
         hal::image::Kind::D2(image_size.0, image_size.1, 1, 1),
         1,
-        factory.get_surface_format(&surface),
-        Some(hal::command::ClearValue::Color([0.1, 0.3, 0.4, 1.0].into())),
+        rendy.factory.get_surface_format(&surface),
+        Some(hal::command::ClearValue {
+            color: hal::command::ClearColor {
+                float32: [1.0, 1.0, 1.0, 1.0],
+            },
+        }),
     );
     let tonemap_pass = graph_builder.add_node(
         node::tonemap::Pipeline::builder()
@@ -169,7 +179,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             .with_color(color)
             .into_pass(),
     );
-    graph_builder.add_node(PresentNode::builder(&factory, surface, color).with_dependency(tonemap_pass));
+    graph_builder.add_node(PresentNode::builder(&rendy.factory, surface, color).with_dependency(tonemap_pass));
     
     let mut aux = node::Aux {
         frames: FRAMES_IN_FLIGHT as usize,
@@ -182,7 +192,8 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     let mut frame_graph = graph_builder
         .with_frames_in_flight(FRAMES_IN_FLIGHT)
-        .build(&mut factory, &mut families, &mut aux)?;
+        .build(&mut rendy.factory, &mut rendy.families, &mut aux).map_err(|_|failure::err_msg("Could not build graph"))?;
+    let mut frame_graph = Some(frame_graph);
     //- Rendy integration
 
     let start_timer = Instant::now();
@@ -259,28 +270,28 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
             Jobs::dispatch_jobs(&batches);
 
-            loop {
-                // Poll message loop while we trace so we can early-exit
-                events_loop.poll_events(|event| {
-                    use winit::VirtualKeyCode;
-                    match event {
-                        Event::WindowEvent { event, .. } => match event {
-                            WindowEvent::KeyboardInput { input, .. } => {
-                                if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
-                                    std::process::exit(0);
-                                }
-                            }
-                            WindowEvent::CloseRequested => std::process::exit(0),
-                            _ => {},
-                        },
-                        _ => {},
-                    }
-                });
+          // loop {
+          //     // Poll message loop while we trace so we can early-exit
+          //     events_loop.run(move |event, _, control_flow| {
+          //         *control_flow = ControlFlow::Poll;
+          //         match event {
+          //             Event::WindowEvent { event, .. } => match event {
+          //                 WindowEvent::KeyboardInput { input, .. } => {
+          //                     if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
+          //                         std::process::exit(0);
+          //                     }
+          //                 }
+          //                 WindowEvent::CloseRequested => std::process::exit(0),
+          //                 _ => {},
+          //             },
+          //             _ => {},
+          //         }
+          //     });
 
                 // wait for threads to finish by checking atomic ref count on the shared image buffer
                 // Note(SS): Could use condvars here but then wouldn't be able to poll the message queue
                 if scene_output.remaining_tasks.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
-                    break;
+                    //break;
                 }
 
                 let percent_done = ((num_tasks - scene_output.remaining_tasks.load(Ordering::Relaxed) as u32) as f32 / num_tasks as f32) * 100.0;
@@ -289,7 +300,6 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
                 // yield thread
                 thread::sleep(Duration::from_secs(1));
-            }
         } else {
             let start_xy = (0, 0);
             let end_xy = image_size;
@@ -311,27 +321,24 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         let image_file_name = "output.ppm";
         save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
 
-        events_loop.run_forever(|event| {
-            use winit::VirtualKeyCode;
-            match event {
-                Event::WindowEvent { event, .. } => match event {
-                    WindowEvent::KeyboardInput { input, .. } => {
-                        if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
-                            ControlFlow::Break
-                        } else {
-                            ControlFlow::Continue
-                        }
-                    }
-                    WindowEvent::CloseRequested => winit::ControlFlow::Break,
-                    WindowEvent::Resized(..) => {
-                        update_window_framebuffer(&scene_state.read().window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
-                        ControlFlow::Continue
-                    },
-                    _ => ControlFlow::Continue,
-                },
-                 _ => ControlFlow::Continue,
-            }
-        });
+      // events_loop.run(move |event, _, control_flow| {
+      //     *control_flow = ControlFlow::Wait;
+      //     match event {
+      //         Event::WindowEvent { event, .. } => match event {
+      //             WindowEvent::KeyboardInput { input, .. } => {
+      //                 if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
+      //                     *control_flow = ControlFlow::Exit;
+      //                 }
+      //             }
+      //             WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+      //             WindowEvent::Resized(..) => {
+      //                 update_window_framebuffer(&scene_state.read().window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+      //             },
+      //             _ => {}
+      //         },
+      //          _ => {},
+      //     }
+      // });
 
     } else  {
     
@@ -376,13 +383,11 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         let mut mouse_x = 0.0;
         let mut mouse_y = 0.0;
         let mut b_down  = false;
-        while keep_running {
+
+        events_loop.run(move |event, _, control_flow| {
+            *control_flow = ControlFlow::Poll;
 
             let start_timer = Instant::now();
-
-            //+ Rendy Integration
-            factory.maintain(&mut families);
-            //- Rendy Integration
 
             // App logic - modifying of shared state allowed
             {
@@ -393,7 +398,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 scene_state_writable.time0 = scene_state_writable.time1;
                 scene_state_writable.time1 += frame_time;
 
-                let dpi = scene_state_writable.window.get_current_monitor().get_hidpi_factor();
+                let dpi = scene_state_writable.window.hidpi_factor();
 
                 // TODO(SS): debouncing, needs moving to struct
                 let mouse_x_last_frame = mouse_x;
@@ -407,56 +412,62 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
               //  mouse_y = 0.0;
               //  left_mouse_down = false;
 
-                events_loop.poll_events(|event| {
-                    use winit::VirtualKeyCode;
-                    use winit::MouseButton;
-                    use winit::ElementState;
-                    match event {
-                    Event::WindowEvent { event, .. } => match event {
-                            WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
-                                Some(VirtualKeyCode::Escape) => keep_running = false,
-                                Some(VirtualKeyCode::W) => move_forward = true,
-                                Some(VirtualKeyCode::S) => move_backward = true,
-                                Some(VirtualKeyCode::D) => move_right = true,
-                                Some(VirtualKeyCode::A) => move_left = true,
-                                Some(VirtualKeyCode::Q) => move_down = true,
-                                Some(VirtualKeyCode::E) => move_up = true,
-                                Some(VirtualKeyCode::Right) => look_right = true,
-                                Some(VirtualKeyCode::Left) => look_left = true,
-                                Some(VirtualKeyCode::Up) => look_up = true,
-                                Some(VirtualKeyCode::Down) => look_down = true,
-                                Some(VirtualKeyCode::O) => {
-                                    clear_scene = true;
-                                    scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
-                                },
-                                Some(VirtualKeyCode::P) => {
-                                    clear_scene = true;
-                                    scene_state_writable.sky_brightness += 0.05;
-                                },
-                                Some(VirtualKeyCode::B) => b_down = true,
-                                _ => {},
+                use winit::event::MouseButton;
+                use winit::event::ElementState;
+                match event {
+                Event::WindowEvent { event, .. } => match event {
+                        WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
+                            Some(VirtualKeyCode::Escape) => keep_running = false,
+                            Some(VirtualKeyCode::W) => move_forward = true,
+                            Some(VirtualKeyCode::S) => move_backward = true,
+                            Some(VirtualKeyCode::D) => move_right = true,
+                            Some(VirtualKeyCode::A) => move_left = true,
+                            Some(VirtualKeyCode::Q) => move_down = true,
+                            Some(VirtualKeyCode::E) => move_up = true,
+                            Some(VirtualKeyCode::Right) => look_right = true,
+                            Some(VirtualKeyCode::Left) => look_left = true,
+                            Some(VirtualKeyCode::Up) => look_up = true,
+                            Some(VirtualKeyCode::Down) => look_down = true,
+                            Some(VirtualKeyCode::O) => {
+                                clear_scene = true;
+                                scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
                             },
-                            WindowEvent::MouseInput { state, button, .. } => {
-                                if button == MouseButton::Left {
-                                    left_mouse_down = if state == ElementState::Pressed {true} else {false};
-                                }
-                                if button == MouseButton::Right {
-                                    right_mouse_down = if state == ElementState::Pressed {true} else {false};
-                                }
+                            Some(VirtualKeyCode::P) => {
+                                clear_scene = true;
+                                scene_state_writable.sky_brightness += 0.05;
                             },
-                            WindowEvent::CursorMoved { position, .. } => {
-                                // Note(SS): This position is not ideal for mouse movement as it contains OS overrides like mouse accel.
-                                let physical_position = position.to_physical(dpi);
-                                mouse_x = physical_position.x;
-                                mouse_y = -physical_position.y;
-                            },
-                            WindowEvent::CloseRequested => keep_running = false,
-                            WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size),
+                            Some(VirtualKeyCode::B) => b_down = true,
                             _ => {},
                         },
+                        WindowEvent::MouseInput { state, button, .. } => {
+                            if button == MouseButton::Left {
+                                left_mouse_down = if state == ElementState::Pressed {true} else {false};
+                            }
+                            if button == MouseButton::Right {
+                                right_mouse_down = if state == ElementState::Pressed {true} else {false};
+                            }
+                        },
+                        WindowEvent::CursorMoved { position, .. } => {
+                            // Note(SS): This position is not ideal for mouse movement as it contains OS overrides like mouse accel.
+                            let physical_position = position.to_physical(dpi);
+                            mouse_x = physical_position.x;
+                            mouse_y = -physical_position.y;
+                        },
+                        WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                        WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size),
                         _ => {},
-                    }
-                });
+                    },
+                    Event::EventsCleared => {
+                            //+ Rendy Integration
+                            rendy.factory.maintain(&mut rendy.families);
+                            if let Some(ref mut frame_graph) = frame_graph {
+                                frame_graph.run(&mut rendy.factory, &mut rendy.families, &mut aux);
+                            }
+                            //update_window_framebuffer(&scene_state_readable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+                            //- Rendy Integration
+                        }
+                    _ => {},
+                }
 
                 if b_down_last_frame && !b_down {
                     scene_state_writable.disable_emissive = !scene_state_writable.disable_emissive;
@@ -587,12 +598,6 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
             let scene_state_readable = scene_state.read();
 
-
-            //+ Rendy Integration
-            frame_graph.run(&mut factory, &mut families, &mut aux);
-            //update_window_framebuffer(&scene_state_readable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
-            //- Rendy Integration
-
             // throttle main thread to 60fps
             const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
             match SIXTY_HZ.checked_sub(start_timer.elapsed()) {
@@ -608,21 +613,23 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
             scene_state_readable.window.set_title(&format!("Path Tracer: FPS = {}  |  Sky Brightness = {}; Emissive = {}  |  {}", fps as i32,
                                                             scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, controls_string));
-        }
 
-        // write image 
-        if OUTPUT_IMAGE_ON_CLOSE {
-            let image_file_name = "output.ppm";
-            save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
-        }
+            if *control_flow == ControlFlow::Exit {
+                // write image 
+                if OUTPUT_IMAGE_ON_CLOSE {
+                    let image_file_name = "output.ppm";
+                    save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+                }
 
-        frame_graph.dispose(&mut factory, &mut aux);
+                frame_graph.take().unwrap().dispose(&mut rendy.factory, &mut aux);
+            }
+        });
     }
 
     Ok(())
 }
 
-fn update_window_title_status(window: &winit::Window, status: &str) {
+fn update_window_title_status(window: &winit::window::Window, status: &str) {
     println!("{}", status);
     window.set_title(&format!("Path Tracer: {}", status));
 }
