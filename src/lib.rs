@@ -37,7 +37,8 @@ use rendy::{
     command::{Graphics, Supports},
     factory::{Factory, ImageState},
     graph::{present::PresentNode, render::*, GraphBuilder},
-    resource::{BufferInfo}
+    resource::{BufferInfo, Buffer, Escape},
+    memory::{Write as rendy_write}
 };
 
 use rendy::init::winit;
@@ -113,10 +114,11 @@ impl Config {
 }
 
 #[derive(Default)]
-pub struct Aux {
+pub struct Aux<B: hal::Backend> {
     pub frames: usize,
     pub hw_alignment: u64,
-    pub tonemapper_args: node::tonemap::TonemapperArgs
+    pub tonemapper_args: node::tonemap::TonemapperArgs,
+    pub source_buffer: Option<Escape<Buffer<B>>>
 }
 
 #[cfg(not(any(feature = "dx12", feature = "metal", feature = "vulkan")))]
@@ -129,7 +131,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Warn)
-        .filter_module("rendy", log::LevelFilter::Trace)
+        .filter_module("rendy", log::LevelFilter::Info)
         .init();
 
     let nx: u32 = 1280;
@@ -139,6 +141,24 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     let window_width = nx as f64;
     let window_height = ny as f64;
+
+    let buffer_size_elements = (nx*ny*4) as usize;
+    let rgba_texture = MultiSliceReadWriteLock::new(vec![0.0_f32; buffer_size_elements]);
+
+    for (pixel_index, colour) in rgba_texture.write().chunks_mut(4).enumerate() {
+        let u = (pixel_index as f32 % nx as f32) / nx as f32;
+        let v = (pixel_index as f32 / nx as f32) / ny as f32;
+        for (i, pixel) in colour.iter_mut().enumerate() {
+            match i {
+                0 => *pixel = u,
+                1 => *pixel = v,
+                2 => *pixel = 0.0,
+                3 => *pixel = 0.0,
+                _ => {}
+            }
+            //println!("u {}, v {}, i {} pixel_index {}", u, v, i, pixel_index);
+        }
+    }
 
     let events_loop = winit::event_loop::EventLoop::new();
     let builder = WindowBuilder::new();
@@ -168,8 +188,8 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         .as_slice()[0]
         .id();
 
-    let source_buffer_size: u64 = (image_size.0 * image_size.1) as u64 * 3 * std::mem::size_of::<f32>() as u64;
-    let source_buffer = rendy.factory
+    let source_buffer_size: u64 = (image_size.0 * image_size.1) as u64 * 4 * std::mem::size_of::<f32>() as u64;
+    let mut source_buffer = rendy.factory
         .create_buffer(
             BufferInfo {
                 size: source_buffer_size,
@@ -179,7 +199,22 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         )
         .map_err(|_| failure::err_msg("Unable to create source buffer"))?;
 
-    let mut graph_builder = GraphBuilder::<Backend, Aux>::new();
+    let source_buffer_size = source_buffer.size();
+    let mut mapped_buffer = source_buffer
+        .map(rendy.factory.device(), 0..source_buffer_size)
+        .map_err(|_| failure::err_msg("Unable to map source buffer"))?;
+
+    unsafe {
+        let buffer = rgba_texture.read();
+        let buffer_size = buffer.len() * std::mem::size_of::<f32>();
+        let mut writer = mapped_buffer
+            .write(rendy.factory.device(), 0..(buffer_size as u64))
+            .map_err(|_| failure::err_msg("Unable to map source buffer"))?;
+        writer.write(buffer.as_slice());
+    }
+
+    let mut graph_builder = GraphBuilder::<Backend, Aux<Backend>>::new();
+
     let source_image = graph_builder.create_image(
         hal::image::Kind::D2(image_size.0, image_size.1, 1, 1), 
         1, 
@@ -201,13 +236,21 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             },
         }),
     );
-   let tonemap_pass = graph_builder.add_node(
-       node::tonemap::Pipeline::builder()
-            .with_image(source_image)
-            .into_subpass()
-            .with_color(color)
-            .into_pass(),
-   );
+
+    let copy_texture_node = graph_builder.add_node(
+        node::copy_image::CopyToTexture::<Backend>::builder(
+            source_image
+        )
+    );
+
+    let tonemap_pass = graph_builder.add_node(
+        node::tonemap::Pipeline::builder()
+                .with_image(source_image)
+                .into_subpass()
+                .with_dependency(copy_texture_node)
+                .with_color(color)
+                .into_pass(),
+    );
     graph_builder.add_node(PresentNode::builder(&rendy.factory, surface, color).with_dependency(tonemap_pass));
     
     let mut aux = Aux {
@@ -215,7 +258,8 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         hw_alignment,
         tonemapper_args: node::tonemap::TonemapperArgs {
             clear_colour_and_exposure: [0.0, 1.0, 0.0, 1.0],
-        }
+        },
+        source_buffer: Some(source_buffer)
     };
 
     let mut frame_graph = graph_builder
@@ -244,11 +288,10 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
    // let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
     let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0);
 
-    // TODO(SS): This is temporary and will be handled by the GPU. Tonemap, gamma and convert to uint.
-    let convert_to_u8_and_gamma_correct = |buffer: &Vec<f32>| -> Vec<u8>{
+    let convert_to_rgb_u8_and_gamma_correct = |buffer: &Vec<f32>| -> Vec<u8>{
         let mut output = Vec::with_capacity(buffer.len());
-         buffer.chunks(3).map(|chunk| {
-            let colour = Vec3::new(chunk[2] as f64,chunk[1] as f64,chunk[0] as f64);
+         buffer.chunks(4).map(|chunk| {
+            let colour = Vec3::new(chunk[0] as f64,chunk[1] as f64,chunk[2] as f64);
             reinhard_tonemap(&colour)
         }).for_each(|colour|{   output.push((255.99 * colour.z.sqrt()) as u8);
                                 output.push((255.99 * colour.y.sqrt()) as u8);
@@ -258,8 +301,6 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     };
 
 
-    let buffer_size_bytes = (nx*ny*3) as usize;
-    let bgr_texture = MultiSliceReadWriteLock::new(vec![0.0_f32; buffer_size_bytes]);
    // update_window_framebuffer(&window, &mut convert_to_u8_and_gamma_correct(bgr_texture.read()), image_size);
 
     let num_cores = num_cpus::get();
@@ -278,7 +319,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     let default_disable_emissive = config.realtime; // Disable emissive for realtime by default as it's noisy
     let default_sky_brightness = if default_disable_emissive {1.0} else {0.6};
     let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window, 0.0, 1.0/60.0, default_sky_brightness, default_disable_emissive, config)));
-    let scene_output = Arc::new(SceneOutput::new(bgr_texture, remaining_tasks, window_lock));
+    let scene_output = Arc::new(SceneOutput::new(rgba_texture, remaining_tasks, window_lock));
 
     if !config.realtime {
         if !RUN_SINGLE_THREADED {
@@ -348,7 +389,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
         // write image 
         let image_file_name = "output.ppm";
-        save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+        save_rgb_texture_as_ppm(image_file_name, &convert_to_rgb_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
 
       // events_loop.run(move |event, _, control_flow| {
       //     *control_flow = ControlFlow::Wait;
@@ -492,10 +533,25 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                     },
                     Event::EventsCleared => {
 
-                       // let job_counter = Jobs::dispatch_jobs(&jobs);
-                      //  Jobs::wait_for_counter(&job_counter, 0);
+                        let job_counter = Jobs::dispatch_jobs(&jobs);
+                        Jobs::wait_for_counter(&job_counter, 0);
 
                         let scene_state_readable = scene_state.read();
+
+                        let source_buffer_size = aux.source_buffer.as_ref().unwrap().size();
+                        let mut mapped_buffer = aux.source_buffer
+                            .as_mut()
+                            .unwrap()
+                            .map(rendy.factory.device(), 0..source_buffer_size).unwrap();
+                
+                        unsafe {
+                            let buffer = scene_output.buffer.read();
+                            let buffer_size = buffer.len() * std::mem::size_of::<f32>();
+                            let mut writer = mapped_buffer
+                                .write(rendy.factory.device(), 0..(buffer_size as u64))
+                                .unwrap();
+                            writer.write(buffer.as_slice());
+                        }
 
                         //+ Rendy Integration
                         rendy.factory.maintain(&mut rendy.families);
@@ -629,7 +685,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                         cam.update();
                         batches.iter().for_each(|batch| batch.write().clear_buffer());
                         let buffer = scene_output.buffer.write();
-                        *buffer = vec![0.0_f32; buffer_size_bytes];
+                        *buffer = vec![0.0_f32; buffer_size_elements];
 
                     }
                 }
@@ -657,7 +713,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 // write image 
                 if OUTPUT_IMAGE_ON_CLOSE {
                     let image_file_name = "output.ppm";
-                    save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+                    save_rgba_texture_as_ppm(image_file_name, &convert_to_rgb_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
                 }
 
                 frame_graph.take().unwrap().dispose(&mut rendy.factory, &mut aux);
@@ -689,6 +745,65 @@ fn save_bgr_texture_as_ppm(filename: &str, bgr_buffer: &Vec<u8>, buffer_size: (u
             rgb_buffer[rgb_offset]   = bgr_buffer[bgr_offset+2];
             rgb_buffer[rgb_offset+1] = bgr_buffer[bgr_offset+1];
             rgb_buffer[rgb_offset+2] = bgr_buffer[bgr_offset];
+        }
+    }
+    
+    let mut output_image = File::create(filename).expect("Could not open file for write");
+    let header = format!("P6 {} {} 255\n", buffer_size.0, buffer_size.1);
+    output_image.write(header.as_bytes()).expect("failed to write to image file");
+    output_image.write(&rgb_buffer).expect("failed to write to image");
+
+    let duration = timer.elapsed();
+    let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
+    println!("{} saved in {}s", filename, duration_in_secs);
+}
+
+fn save_rgb_texture_as_ppm(filename: &str, buffer: &Vec<u8>, buffer_size: (u32,u32)) {
+    
+    let timer = Instant::now();
+    
+    // convert to rgb buffer and flip horizontally as (0,0) is bottom left for ppm
+    let buffer_length = buffer.len();
+    let mut rgb_buffer = vec![0; buffer_length];
+    for j in 0..buffer_size.1 {
+        let j_flipped = buffer_size.1 - j - 1;
+        for i in 0..buffer_size.0 {
+            let rgb_offset_x = i * 3;
+            let rgb_offset = (j * buffer_size.0 * 3 + rgb_offset_x) as usize;
+            let buffer_offset = (j_flipped * buffer_size.0  * 3 + rgb_offset_x) as usize;
+            rgb_buffer[rgb_offset]   = buffer[buffer_offset];
+            rgb_buffer[rgb_offset+1] = buffer[buffer_offset+1];
+            rgb_buffer[rgb_offset+2] = buffer[buffer_offset+2];
+        }
+    }
+    
+    let mut output_image = File::create(filename).expect("Could not open file for write");
+    let header = format!("P6 {} {} 255\n", buffer_size.0, buffer_size.1);
+    output_image.write(header.as_bytes()).expect("failed to write to image file");
+    output_image.write(&rgb_buffer).expect("failed to write to image");
+
+    let duration = timer.elapsed();
+    let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
+    println!("{} saved in {}s", filename, duration_in_secs);
+}
+
+fn save_rgba_texture_as_ppm(filename: &str, rgba_buffer: &Vec<u8>, buffer_size: (u32,u32)) {
+    
+    let timer = Instant::now();
+    
+    // convert to rgb buffer and flip horizontally as (0,0) is bottom left for ppm
+    let buffer_length = rgba_buffer.len();
+    let mut rgb_buffer = vec![0; buffer_length];
+    for j in 0..buffer_size.1 {
+        let j_flipped = buffer_size.1 - j - 1;
+        for i in 0..buffer_size.0 {
+            let rgb_offset_x = i * 3;
+            let rgba_offset_x = i * 4;
+            let rgb_offset = (j * buffer_size.0 * 3 + rgb_offset_x) as usize;
+            let rgba_offset = (j_flipped * buffer_size.0  * 3 + rgba_offset_x) as usize;
+            rgb_buffer[rgb_offset]   = rgba_buffer[rgba_offset];
+            rgb_buffer[rgb_offset+1] = rgba_buffer[rgba_offset+1];
+            rgb_buffer[rgb_offset+2] = rgba_buffer[rgba_offset+2];
         }
     }
     

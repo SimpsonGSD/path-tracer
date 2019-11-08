@@ -62,24 +62,10 @@ struct Settings {
     hw_alignment: u64,
 }
 
-impl From<&Aux> for Settings {
-    fn from(aux: &Aux) -> Self {
-        Self::from_aux(aux)
-    }
-}
-
-impl From<&mut Aux> for Settings {
-    fn from(aux: &mut Aux) -> Self {
-        Self::from_aux(aux)
-    }
-}
 
 impl Settings {
-    const UNIFORM_SIZE: u64 = size_of::<UniformArgs>() as u64;
 
-    fn from_aux(aux: &Aux) -> Self {
-        Settings { hw_alignment: aux.hw_alignment }
-    }
+    const UNIFORM_SIZE: u64 = size_of::<UniformArgs>() as u64;
 
     #[inline]
     fn buffer_frame_size(&self) -> u64 {
@@ -108,7 +94,7 @@ pub struct Pipeline<B: hal::Backend> {
 }
 
 
-impl<B> SimpleGraphicsPipelineDesc<B, Aux> for PipelineDesc
+impl<B> SimpleGraphicsPipelineDesc<B, Aux<B>> for PipelineDesc
 where
     B: hal::Backend,
 {
@@ -130,7 +116,7 @@ where
     fn load_shader_set(
         &self,
         factory: &mut Factory<B>,
-        _aux: &Aux,
+        _aux: &Aux<B>,
     ) -> rendy::shader::ShaderSet<B> {
         SHADERS.build(factory, Default::default()).unwrap()
     }
@@ -171,7 +157,7 @@ where
         ctx: &GraphContext<B>,
         factory: &mut Factory<B>,
         queue: QueueId,
-        aux: &Aux,
+        aux: &Aux<B>,
         buffers: Vec<NodeBuffer>,
         images: Vec<NodeImage>,
         set_layouts: &[Handle<DescriptorSetLayout<B>>],
@@ -181,7 +167,9 @@ where
         assert!(set_layouts.len() == 1);
 
         let frames = aux.frames;
-        let settings: Settings = (&*aux).into();
+        let settings = Settings { 
+            hw_alignment: aux.hw_alignment
+        };
 
         // This is how we can load an image and create a new texture.
        // let image_reader = BufReader::new(
@@ -395,7 +383,7 @@ where
     }
 }
 
-impl<B> SimpleGraphicsPipeline<B, Aux> for Pipeline<B>
+impl<B> SimpleGraphicsPipeline<B, Aux<B>> for Pipeline<B>
 where
     B: hal::Backend,
 {
@@ -407,7 +395,7 @@ where
         _queue: QueueId,
         _set_layouts: &[Handle<DescriptorSetLayout<B>>],
         index: usize,
-        aux: &Aux,
+        aux: &Aux<B>,
     ) -> PrepareResult {
         unsafe {
             factory
@@ -428,7 +416,7 @@ where
         layout: &B::PipelineLayout,
         mut encoder: RenderPassEncoder<'_, B>,
         index: usize,
-        _aux: &Aux,
+        _aux: &Aux<B>,
     ) {
         unsafe {
             encoder.bind_graphics_descriptor_sets(
@@ -446,7 +434,7 @@ where
         }
     }
 
-    fn dispose(mut self, factory: &mut Factory<B>, _aux: &Aux) {
+    fn dispose(mut self, factory: &mut Factory<B>, _aux: &Aux<B>) {
         unsafe {
             //self.descriptor_pool.reset();
             //factory.device().destroy_descriptor_pool(self.descriptor_pool);

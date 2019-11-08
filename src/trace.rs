@@ -112,7 +112,7 @@ impl TraceSceneBatchJob {
         self.num_frames_per_pixel = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1) as usize];
         
         if !self.realtime {
-            self.local_buffer_u8 = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
+            self.local_buffer_u8 = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1*4) as usize]
         } 
         //else {
        //     self.local_buffer_f32 = vec![0.0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
@@ -135,9 +135,9 @@ impl TraceSceneBatchJob {
 
         for (row_idx, j) in (self.start_xy.1..self.end_xy.1).rev().enumerate() {
 
-            let stride = (self.num_pixels_xy.0 * 3) as usize;
+            let stride = (self.num_pixels_xy.0 * 4) as usize;
 
-            let start = (self.start_xy.0 * 3 + j * self.image_size.0 * 3) as usize;
+            let start = (self.start_xy.0 * 4 + j * self.image_size.0 * 4) as usize;
             let dest_buffer_row_slice = &mut self.shared_scene_write_state.buffer.write()[start..start + stride];
 
             let mut buffer_offset = {
@@ -154,7 +154,7 @@ impl TraceSceneBatchJob {
                 let local_pixel_idx = row_idx * self.num_pixels_xy.0 as usize + col_idx;
                 self.num_frames_per_pixel[local_pixel_idx] += if self.num_frames_per_pixel[local_pixel_idx] <= 1000 {1} else {0};
 
-                let mut col = Vec3::new_zero_vector();
+                let mut pixel_colour = Vec3::new_zero_vector();
                 for _ in 0..self.num_samples {
                     let random = random::rand();
                     let u: f64 = ((i as f64) + random) / (self.image_size.0 as f64);
@@ -162,30 +162,30 @@ impl TraceSceneBatchJob {
                     let v: f64 = ((j as f64) + random) / (self.image_size.1 as f64);
 
                     let r = read_state.cam.get_ray(u, v);
-                    col += color(&r, &read_state.world, 0, read_state.time0, read_state.time1, read_state.sky_brightness, read_state.disable_emissive);
+                    pixel_colour += color(&r, &read_state.world, 0, read_state.time0, read_state.time1, read_state.sky_brightness, read_state.disable_emissive);
 
                     // SS: Debug uv image
                     // col += Vec3::new(u, v, 0.0);
                 }
 
                 // PDF
-                col = col / self.num_samples as f64;
+                pixel_colour = pixel_colour / self.num_samples as f64;
 
-                let index = col_idx*3 as usize;
+                let index = col_idx*4 as usize;
                 if read_state.config.realtime {
 
                     let num_frames = self.num_frames_per_pixel[local_pixel_idx];
                     let weight = 1.0 / num_frames as f32;
                     let one_minus_weight: f32 = 1.0 - weight;
 
-                    dest_buffer_row_slice[index]     = (col.z as f32) * weight + dest_buffer_row_slice[index    ] * one_minus_weight;
-                    dest_buffer_row_slice[index + 1] = (col.y as f32) * weight + dest_buffer_row_slice[index + 1] * one_minus_weight;
-                    dest_buffer_row_slice[index + 2] = (col.x as f32) * weight + dest_buffer_row_slice[index + 2] * one_minus_weight;
+                    dest_buffer_row_slice[index]     = (pixel_colour.z as f32) * weight + dest_buffer_row_slice[index    ] * one_minus_weight;
+                    dest_buffer_row_slice[index + 1] = (pixel_colour.y as f32) * weight + dest_buffer_row_slice[index + 1] * one_minus_weight;
+                    dest_buffer_row_slice[index + 2] = (pixel_colour.x as f32) * weight + dest_buffer_row_slice[index + 2] * one_minus_weight;
                 } else {
 
                     // only required if rendering during trace
                     if local_enable_render {
-                        let tonemapped_col = reinhard_tonemap(&col);
+                        let tonemapped_col = reinhard_tonemap(&pixel_colour);
 
                         // Gamma correct 1/2.0 and convert to u8
                         let ir = (255.99*tonemapped_col.x.sqrt()) as u8;
@@ -200,9 +200,9 @@ impl TraceSceneBatchJob {
                         buffer_offset += 1;
                     }
 
-                    dest_buffer_row_slice[index] = col.b() as f32;
-                    dest_buffer_row_slice[index + 1] = col.g() as f32;
-                    dest_buffer_row_slice[index + 2] = col.r() as f32;
+                    dest_buffer_row_slice[index] = pixel_colour.b() as f32;
+                    dest_buffer_row_slice[index + 1] = pixel_colour.g() as f32;
+                    dest_buffer_row_slice[index + 2] = pixel_colour.r() as f32;
                 }
             }
 

@@ -16,6 +16,6 @@ void main() {
     vec2 uv = f_uv;
     uv.y = 1.0 - uv.y;
     vec3 tex_color = texture(sampler2D(colormap, colorsampler), uv).rgb;
-    color = vec4(clear_colour_and_exposure.rgb * tex_color, 1.0);
+    color = vec4(tex_color, 1.0);
     //color = vec4(1.0,0.0,0.0, 1.0);
 }
