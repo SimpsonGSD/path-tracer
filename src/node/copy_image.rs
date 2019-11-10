@@ -10,6 +10,7 @@ use rendy::{
         ImageAccess, ImageId, NodeBuffer, NodeBuilder, NodeId, NodeImage, NodeBuildError,
     },
     texture::Texture,
+    resource::{SubresourceRange},
 };
 
 use rendy::hal;
@@ -117,13 +118,37 @@ where
         //    }
         //}
 
+        let queue_id = family.queue(queue).id();
         let image = ctx.get_image(images[0].id).unwrap();
         let image_extent = image.kind().extent();
+
         unsafe{
+
+         //factory.transition_image(
+         //    (*image).clone(), 
+         //    SubresourceRange {
+         //        aspects: hal::format::Aspects::COLOR,
+         //        levels: 0..1,
+         //        layers: 0..1,
+         //    }, 
+         //    ImageState {
+         //        queue: family.queue(queue).id(),
+         //        stage: hal::pso::PipelineStage::empty(),
+         //        access: hal::image::Access::empty(),
+         //        layout: hal::image::Layout::Undefined,
+         //    },
+         //    ImageState {
+         //         queue: family.queue(queue).id(),
+         //         stage: hal::pso::PipelineStage::TRANSFER,
+         //         access: hal::image::Access::TRANSFER_WRITE,
+         //         layout: hal::image::Layout::TransferDstOptimal,
+         //     }
+         //);
+
             encoder.copy_buffer_to_image(
                 buffer.raw(),
                 image.raw(),
-                images[0].layout,
+                hal::image::Layout::TransferDstOptimal,
                 Some(hal::command::BufferImageCopy {
                     buffer_offset: 0,
                         buffer_width: image_extent.width,
@@ -141,36 +166,40 @@ where
                         },
                 }),
             );
+
+           // {
+             //   let (mut stages, mut barriers) = gfx_release_barriers(ctx, None, images.iter());
+           //     let end_state = ImageState {
+           //         queue: queue_id,
+           //         stage: hal::pso::PipelineStage::FRAGMENT_SHADER,
+           //         access: hal::image::Access::SHADER_READ,
+           //         layout: hal::image::Layout::ShaderReadOnlyOptimal,
+           //     };
+           //     stages.start |= hal::pso::PipelineStage::TRANSFER;
+           //     stages.end |= end_state.stage;
+           //     barriers.push(hal::memory::Barrier::Image {
+           //         states: (
+           //             hal::image::Access::TRANSFER_WRITE,
+           //             hal::image::Layout::TransferDstOptimal,
+           //         )..(end_state.access, end_state.layout),
+           //         families: None,
+           //         target: image.raw(),
+           //         range: hal::image::SubresourceRange {
+           //             aspects: hal::format::Aspects::COLOR,
+           //             levels: 0..1,
+           //             layers: 0..1,
+           //         },
+           //     });
+    //
+           //     log::trace!("Release {:?} : {:#?}", stages, barriers);
+           //     encoder.pipeline_barrier(stages, hal::memory::Dependencies::empty(), barriers);
+           // }
         }
 
-       // {
-       //     let (mut stages, mut barriers) = gfx_release_barriers(ctx, None, images.iter());
-       //     let end_state = ImageState {
-       //         queue: family.queue(queue).id(),
-       //         stage: hal::pso::PipelineStage::FRAGMENT_SHADER,
-       //         access: hal::image::Access::SHADER_READ,
-       //         layout: hal::image::Layout::ShaderReadOnlyOptimal,
-       //     };
-       //     stages.start |= hal::pso::PipelineStage::TRANSFER;
-       //     stages.end |= end_state.stage;
-       //     barriers.push(hal::memory::Barrier::Image {
-       //         states: (
-       //             hal::image::Access::TRANSFER_WRITE,
-       //             hal::image::Layout::TransferDstOptimal,
-       //         )..(end_state.access, end_state.layout),
-       //         families: None,
-       //         target: image.raw(),
-       //         range: hal::image::SubresourceRange {
-       //             aspects: hal::format::Aspects::COLOR,
-       //             levels: 0..1,
-       //             layers: 0..1,
-       //         },
-       //     });
-//
-       //     log::trace!("Release {:?} : {:#?}", stages, barriers);
-       //     unsafe{
-       //         encoder.pipeline_barrier(stages, hal::memory::Dependencies::empty(), barriers);
-       //     }
+         //    log::trace!("Release {:?} : {:#?}", stages, barriers);
+         //    unsafe{
+         //        encoder.pipeline_barrier(stages, hal::memory::Dependencies::empty(), barriers);
+          //   }
        // }
 
         let (submit, buffer) = buf_recording.finish().submit();

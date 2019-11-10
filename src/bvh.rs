@@ -90,10 +90,7 @@ impl Hitable for BvhNode {
                 },
                 None => {
                     let right_hit = self.right.hit(ray, t_min, t_max);
-                    match right_hit {
-                        Some(right_hit_u) => Some(right_hit_u),
-                        None => None,
-                    }
+                    right_hit
                 }
             }
         } 

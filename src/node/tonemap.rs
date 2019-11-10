@@ -84,8 +84,6 @@ pub struct PipelineDesc;
 #[derive(Debug)]
 pub struct Pipeline<B: hal::Backend> {
     buffer: Escape<Buffer<B>>,
-    //sets: Vec<B::DescriptorSet>,
-    //descriptor_pool: B::DescriptorPool,
     descriptor_set: Escape<DescriptorSet<B>>,
     image_sampler: Escape<Sampler<B>>,
     image_view: Escape<ImageView<B>>,
@@ -284,98 +282,10 @@ where
             ]);
         }
 
-       // let mut descriptor_pool = unsafe {
-       //     factory.create_descriptor_pool(
-       //         frames,
-       //         vec![
-       //            hal::pso::DescriptorRangeDesc {
-       //                ty: hal::pso::DescriptorType::Sampler,
-       //                count: frames,
-       //            },
-       //            hal::pso::DescriptorRangeDesc {
-       //                ty: hal::pso::DescriptorType::SampledImage,
-       //                count: frames,
-       //            },
-       //             hal::pso::DescriptorRangeDesc {
-       //                 ty: hal::pso::DescriptorType::UniformBuffer,
-       //                 count: frames,
-       //             },
-       //         ],
-       //         hal::pso::DescriptorPoolCreateFlags::empty(),
-       //     )?
-       // };
-//
-
-
-       //unsafe {
-       //    factory.device().write_descriptor_sets(vec![
-       //        hal::pso::DescriptorSetWrite {
-       //            set: descriptor_set.raw(),
-       //            binding: 0,
-       //            array_offset: 0,
-       //            descriptors: vec![hal::pso::Descriptor::Image(
-       //                texture.view().raw(),
-       //                hal::image::Layout::ShaderReadOnlyOptimal,
-       //            )],
-       //        },
-       //        hal::pso::DescriptorSetWrite {
-       //            set: descriptor_set.raw(),
-       //            binding: 1,
-       //            array_offset: 0,
-       //            descriptors: vec![hal::pso::Descriptor::Sampler(texture.sampler().raw())],
-       //        },
-       //    ]);
-       //}
-
-       //let mut sets = Vec::with_capacity(frames);
-       //for index in 0..frames {
-       //    unsafe {
-       //        let set = descriptor_pool
-       //            .allocate_set(&set_layouts[0].raw())
-       //            .map_err(|e| {
-       //                log::error!("Unable to create descriptor pool: {:?}", e);
-       //                hal::pso::CreationError::Other
-       //            })?;
-       //        factory.device().write_descriptor_sets(vec![
-       //           //hal::pso::DescriptorSetWrite {
-       //           //    set: &set,
-       //           //    binding: 0,
-       //           //    array_offset: 0,
-       //           //    descriptors: Some(hal::pso::Descriptor::Sampler(image_sampler.raw())),
-       //           //},
-       //           //hal::pso::DescriptorSetWrite {
-       //           //    set: &set,
-       //           //    binding: 1,
-       //           //    array_offset: 0,
-       //           //    descriptors: Some(hal::pso::Descriptor::Image(
-       //           //        image_view.raw(),
-       //           //        hal::image::Layout::ShaderReadOnlyOptimal,
-       //           //    )),
-       //           //},
-       //            hal::pso::DescriptorSetWrite {
-       //                set: &set,
-       //                binding: 2,
-       //                array_offset: 0,
-       //                descriptors: Some(hal::pso::Descriptor::Buffer(
-       //                    buffer.raw(),
-       //                    Some(settings.uniform_offset(index as u64))
-       //                        ..Some(
-       //                            settings.uniform_offset(index as u64) + Settings::UNIFORM_SIZE,
-       //                        ),
-       //                )),
-       //            },
-       //        ]);
-       //        sets.push(set);
-       //    }
-       //}
-
         Ok(Pipeline {
             buffer,
-            //sets,
-            //texture,
             image_view,
             image_sampler,
-            //descriptor_pool,
             descriptor_set,
             settings,
         })
@@ -422,7 +332,6 @@ where
                 layout,
                 0,
                 std::iter::once(self.descriptor_set.raw()),
-                //Some(&self.sets[index]),
                 std::iter::empty(),
             );
             // This is a trick from Sascha Willems which uses just the gl_VertexIndex
@@ -433,10 +342,6 @@ where
         }
     }
 
-    fn dispose(mut self, factory: &mut Factory<B>, _aux: &Aux<B>) {
-        unsafe {
-            //self.descriptor_pool.reset();
-            //factory.device().destroy_descriptor_pool(self.descriptor_pool);
-        }
+    fn dispose(self, factory: &mut Factory<B>, _aux: &Aux<B>) {
     }
 }

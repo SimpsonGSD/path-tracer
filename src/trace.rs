@@ -16,7 +16,8 @@ use super::Config;
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
 const ENABLE_RENDER: bool = true;
-const CHANCE_TO_SKIP_PER_FRAME: f64 = 0.8;
+const CHANCE_TO_SKIP_TASK_PER_FRAME: f64 = 0.0;
+const CHANCE_TO_SKIP_PIXEL_PER_FRAME: f64 = 0.8;
 
 pub struct SceneOutput {
     pub buffer: MultiSliceReadWriteLock<Vec<f32>>,
@@ -33,7 +34,12 @@ impl SceneOutput {
             remaining_tasks,
         }
     }
+
+    pub fn notify_task_completion(&self) {
+        self.remaining_tasks.fetch_sub(1, Ordering::SeqCst);
+    }
 }
+
 
 pub struct SceneState {
     pub cam: Camera,
@@ -131,6 +137,11 @@ impl TraceSceneBatchJob {
         self.num_frames += 1;//if self.num_frames == 500 {0} else {1};
         let read_state = self.shared_scene_read_state.read();
 
+        if read_state.config.realtime && random::rand() < CHANCE_TO_SKIP_TASK_PER_FRAME {
+            self.shared_scene_write_state.notify_task_completion();
+            return;
+        }
+
         let local_enable_render: bool = ENABLE_RENDER && !self.realtime;
 
         for (row_idx, j) in (self.start_xy.1..self.end_xy.1).rev().enumerate() {
@@ -147,9 +158,9 @@ impl TraceSceneBatchJob {
 
             for (col_idx, i) in (self.start_xy.0..self.end_xy.0).enumerate() {
 
-                if read_state.config.realtime && random::rand() < CHANCE_TO_SKIP_PER_FRAME {
-                    continue;
-                }
+               if read_state.config.realtime && random::rand() < CHANCE_TO_SKIP_PIXEL_PER_FRAME {
+                   continue;
+               }
 
                 let local_pixel_idx = row_idx * self.num_pixels_xy.0 as usize + col_idx;
                 self.num_frames_per_pixel[local_pixel_idx] += if self.num_frames_per_pixel[local_pixel_idx] <= 1000 {1} else {0};
@@ -221,7 +232,7 @@ impl TraceSceneBatchJob {
         
 
         // notify completion by decrementing task counter
-        self.shared_scene_write_state.remaining_tasks.fetch_sub(1, Ordering::SeqCst);
+        self.shared_scene_write_state.notify_task_completion();
     }
 }
 

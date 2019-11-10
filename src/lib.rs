@@ -133,6 +133,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Warn)
         .filter_module("rendy", log::LevelFilter::Info)
+        .filter_module("path-tracer", log::LevelFilter::Trace)
         .init();
 
     let nx: u32 = 1280;
@@ -527,8 +528,10 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             frame_time = frame_duration.as_secs() as f64 + frame_duration.subsec_nanos() as f64 * 1e-9;
 
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
-            scene_state_readable.window.set_title(&format!("Path Tracer: FPS = {} | Frame = {}  |  Sky Brightness = {}; Emissive = {}  |  {}", fps as i32, frame_counter,
-                                                            scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, controls_string));
+            scene_state_readable.window
+                .set_title(
+                    &format!("Path Tracer: FPS = {} (time={:.2}ms) |  Frame = {} | Sky Brightness = {}; Emissive = {} | {}", 
+                             fps as i32, frame_time*1000.0, frame_counter,scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, controls_string));
 
             if user_input.exit_requested {
                 // write image 
