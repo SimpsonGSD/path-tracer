@@ -166,7 +166,6 @@ where
         //assert!(images.len() == 1);
         assert!(set_layouts.len() == 1);
 
-        let frames = aux.frames;
         let settings = Settings { 
             hw_alignment: aux.hw_alignment
         };

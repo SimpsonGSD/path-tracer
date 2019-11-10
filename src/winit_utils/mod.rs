@@ -7,11 +7,13 @@ use winit::{
     dpi::LogicalSize,
 };
 
+#[allow(dead_code)]
 pub fn get_physical_window_size(window: &winit::window::Window) -> (f64, f64) {
     let window_size = window.inner_size().to_physical(window.hidpi_factor());
     (window_size.width, window_size.height)
 }
 
+#[allow(dead_code)]
 #[cfg(target_os = "windows")]
 pub fn update_window_framebuffer(window: &winit::window::Window, 
                                  buffer: &mut Vec<u8>, 
@@ -70,6 +72,7 @@ pub fn update_window_framebuffer(window: &winit::window::Window,
 
 }
 
+#[allow(dead_code)]
 pub fn update_window_framebuffer_rect(window: &winit::window::Window, 
                                   buffer: &mut Vec<u8>, 
                                   window_pos: (u32, u32), 
