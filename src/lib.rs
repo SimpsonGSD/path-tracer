@@ -160,7 +160,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         }
     }
 
-    let events_loop = winit::event_loop::EventLoop::new();
+    let mut events_loop = winit::event_loop::EventLoop::new();
     let builder = WindowBuilder::new();
     let window = builder.with_inner_size(LogicalSize{width: window_width, height: window_height}).build(&events_loop).unwrap();
     window.set_title("Path Tracer");
@@ -454,10 +454,10 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         let mut b_down  = false;
         let mut frame_counter = 0;
 
-        events_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Poll;
+        loop {
 
             let start_timer = Instant::now();
+            let mut should_exit = false;
 
             // App logic - modifying of shared state allowed
             {
@@ -481,89 +481,63 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
               //  mouse_y = 0.0;
               //  left_mouse_down = false;
 
-                use winit::event::MouseButton;
-                use winit::event::ElementState;
-                match event {
-                    Event::WindowEvent { event, .. } => {
-                        match event {
-                            WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
-                                Some(VirtualKeyCode::Escape) => *control_flow = ControlFlow::Exit,
-                                Some(VirtualKeyCode::W) => move_forward = true,
-                                Some(VirtualKeyCode::S) => move_backward = true,
-                                Some(VirtualKeyCode::D) => move_right = true,
-                                Some(VirtualKeyCode::A) => move_left = true,
-                                Some(VirtualKeyCode::Q) => move_down = true,
-                                Some(VirtualKeyCode::E) => move_up = true,
-                                Some(VirtualKeyCode::Right) => look_right = true,
-                                Some(VirtualKeyCode::Left) => look_left = true,
-                                Some(VirtualKeyCode::Up) => look_up = true,
-                                Some(VirtualKeyCode::Down) => look_down = true,
-                                Some(VirtualKeyCode::O) => {
-                                    clear_scene = true;
-                                    let mut scene_state_writable = scene_state.write();
-                                    scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
+                use winit::platform::desktop::EventLoopExtDesktop;
+                events_loop.run_return(|event, _, control_flow| {
+                    *control_flow = ControlFlow::Exit;
+
+                    use winit::event::MouseButton;
+                    use winit::event::ElementState;
+                    match event {
+                        Event::WindowEvent { event, .. } => {
+                            match event {
+                                WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
+                                    Some(VirtualKeyCode::Escape) => should_exit = true,
+                                    Some(VirtualKeyCode::W) => move_forward = true,
+                                    Some(VirtualKeyCode::S) => move_backward = true,
+                                    Some(VirtualKeyCode::D) => move_right = true,
+                                    Some(VirtualKeyCode::A) => move_left = true,
+                                    Some(VirtualKeyCode::Q) => move_down = true,
+                                    Some(VirtualKeyCode::E) => move_up = true,
+                                    Some(VirtualKeyCode::Right) => look_right = true,
+                                    Some(VirtualKeyCode::Left) => look_left = true,
+                                    Some(VirtualKeyCode::Up) => look_up = true,
+                                    Some(VirtualKeyCode::Down) => look_down = true,
+                                    Some(VirtualKeyCode::O) => {
+                                        clear_scene = true;
+                                        let mut scene_state_writable = scene_state.write();
+                                        scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
+                                    },
+                                    Some(VirtualKeyCode::P) => {
+                                        clear_scene = true;
+                                        let mut scene_state_writable = scene_state.write();
+                                        scene_state_writable.sky_brightness += 0.05;
+                                    },
+                                    Some(VirtualKeyCode::B) => b_down = true,
+                                    _ => {},
                                 },
-                                Some(VirtualKeyCode::P) => {
-                                    clear_scene = true;
-                                    let mut scene_state_writable = scene_state.write();
-                                    scene_state_writable.sky_brightness += 0.05;
+                                WindowEvent::MouseInput { state, button, .. } => {
+                                    if button == MouseButton::Left {
+                                        left_mouse_down = if state == ElementState::Pressed {true} else {false};
+                                    }
+                                    if button == MouseButton::Right {
+                                        right_mouse_down = if state == ElementState::Pressed {true} else {false};
+                                    }
                                 },
-                                Some(VirtualKeyCode::B) => b_down = true,
+                                WindowEvent::CursorMoved { position, .. } => {
+                                    // Note(SS): This position is not ideal for mouse movement as it contains OS overrides like mouse accel.
+                                    let dpi = scene_state.read().window.hidpi_factor();
+                                    let physical_position = position.to_physical(dpi);
+                                    mouse_x = physical_position.x;
+                                    mouse_y = -physical_position.y;
+                                },
+                                WindowEvent::CloseRequested => should_exit = true,
+                            //   WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size),
                                 _ => {},
-                            },
-                            WindowEvent::MouseInput { state, button, .. } => {
-                                if button == MouseButton::Left {
-                                    left_mouse_down = if state == ElementState::Pressed {true} else {false};
-                                }
-                                if button == MouseButton::Right {
-                                    right_mouse_down = if state == ElementState::Pressed {true} else {false};
-                                }
-                            },
-                            WindowEvent::CursorMoved { position, .. } => {
-                                // Note(SS): This position is not ideal for mouse movement as it contains OS overrides like mouse accel.
-                                let dpi = scene_state.read().window.hidpi_factor();
-                                let physical_position = position.to_physical(dpi);
-                                mouse_x = physical_position.x;
-                                mouse_y = -physical_position.y;
-                            },
-                            WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                        //   WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size),
-                            _ => {},
-                        }
-                    },
-                    Event::EventsCleared => {
-
-                        let job_counter = Jobs::dispatch_jobs(&jobs);
-                        Jobs::wait_for_counter(&job_counter, 0);
-
-                        let scene_state_readable = scene_state.read();
-
-                        let source_buffer_size = aux.source_buffer.as_ref().unwrap().size();
-                        let mut mapped_buffer = aux.source_buffer
-                            .as_mut()
-                            .unwrap()
-                            .map(rendy.factory.device(), 0..source_buffer_size).unwrap();
-                
-                        unsafe {
-                            let buffer = scene_output.buffer.read();
-                            let buffer_size = buffer.len() * std::mem::size_of::<f32>();
-                            let mut writer = mapped_buffer
-                                .write(rendy.factory.device(), 0..(buffer_size as u64))
-                                .unwrap();
-                            writer.write(buffer.as_slice());
-                        }
-
-                        //+ Rendy Integration
-                        rendy.factory.maintain(&mut rendy.families);
-                        if let Some(ref mut frame_graph) = frame_graph {
-                            frame_graph.run(&mut rendy.factory, &mut rendy.families, &mut aux);
-                        }
-                        frame_counter += 1;
-                        //update_window_framebuffer(&scene_state_readable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
-                        //- Rendy Integration
+                            }
+                        },
+                        _ => {},
                     }
-                    _ => {},
-                }
+                });
 
                 if b_down_last_frame && !b_down {
                     let mut scene_state_writable = scene_state.write();
@@ -691,13 +665,44 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 }
             }
 
+            {
+
+                let job_counter = Jobs::dispatch_jobs(&jobs);
+                Jobs::wait_for_counter(&job_counter, 0);
+
+                let scene_state_readable = scene_state.read();
+
+                let source_buffer_size = aux.source_buffer.as_ref().unwrap().size();
+                let mut mapped_buffer = aux.source_buffer
+                    .as_mut()
+                    .unwrap()
+                    .map(rendy.factory.device(), 0..source_buffer_size).unwrap();
+        
+                unsafe {
+                    let buffer = scene_output.buffer.read();
+                    let buffer_size = buffer.len() * std::mem::size_of::<f32>();
+                    let mut writer = mapped_buffer
+                        .write(rendy.factory.device(), 0..(buffer_size as u64))
+                        .unwrap();
+                    writer.write(buffer.as_slice());
+                }
+
+                //+ Rendy Integration
+                rendy.factory.maintain(&mut rendy.families);
+                if let Some(ref mut frame_graph) = frame_graph {
+                    frame_graph.run(&mut rendy.factory, &mut rendy.families, &mut aux);
+                }
+                frame_counter += 1;
+            }
+
+
             let scene_state_readable = scene_state.read();
 
             // throttle main thread to 60fps
             const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
             match SIXTY_HZ.checked_sub(start_timer.elapsed()) {
                 Some(sleep_time) => {
-              //      thread::sleep(sleep_time);
+                    thread::sleep(sleep_time);
                 },
                 None => {}
             };
@@ -709,7 +714,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             scene_state_readable.window.set_title(&format!("Path Tracer: FPS = {} | Frame = {}  |  Sky Brightness = {}; Emissive = {}  |  {}", fps as i32, frame_counter,
                                                             scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, controls_string));
 
-            if *control_flow == ControlFlow::Exit {
+            if should_exit {
                 // write image 
                 if OUTPUT_IMAGE_ON_CLOSE {
                     let image_file_name = "output.ppm";
@@ -717,8 +722,10 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 }
 
                 frame_graph.take().unwrap().dispose(&mut rendy.factory, &mut aux);
+                println!("Exit requested");
+                break;
             }
-        });
+        }
     }
 
     Ok(())
