@@ -16,6 +16,9 @@ void main() {
     vec2 uv = f_uv;
     uv.y = 1.0 - uv.y;
     vec3 tex_color = texture(sampler2D(colormap, colorsampler), uv).rgb;
+    tex_color *= clear_colour_and_exposure.a;
+    tex_color = tex_color / (1 + tex_color); // reinhard tonemap
+    float vignette = 1.0 - distance(uv, vec2(0.5, 0.5));
+    tex_color *= vignette;
     color = vec4(tex_color, 1.0);
-    //color = vec4(1.0,0.0,0.0, 1.0);
 }
