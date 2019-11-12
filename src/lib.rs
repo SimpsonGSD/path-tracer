@@ -1,3 +1,8 @@
+#![cfg_attr(
+    not(any(feature = "dx12", feature = "metal", feature = "vulkan")),
+    allow(unused)
+)]
+
 // std library imports
 use std::fs::File;
 use std::io::Write;
@@ -11,16 +16,40 @@ use std::thread;
 // 3rd party crate imports
 #[cfg(target_os = "windows")]
 extern crate winapi;
-
-extern crate winit;
-use winit::{ControlFlow, Event, WindowBuilder, WindowEvent};
-use winit::dpi::LogicalSize;
-use winit_utils::*;
-
 extern crate num_cpus;
 extern crate lazy_static;
-
 extern crate parking_lot;
+
+#[cfg(feature = "dx12")]
+pub type Backend = rendy::dx12::Backend;
+
+#[cfg(feature = "metal")]
+pub type Backend = rendy::metal::Backend;
+
+#[cfg(feature = "vulkan")]
+pub type Backend = rendy::vulkan::Backend;
+
+#[cfg(feature = "empty")]
+pub type Backend = rendy::empty::Backend;
+
+extern crate rendy;
+use rendy::{
+    command::{Graphics, Supports},
+    factory::{Factory, ImageState},
+    graph::{present::PresentNode, render::*, GraphBuilder},
+    resource::{BufferInfo, Buffer, Escape},
+    memory::{Write as rendy_write}
+};
+
+use rendy::init::winit;
+use rendy::hal;
+use winit::{ 
+    event::{Event, WindowEvent, VirtualKeyCode},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+    dpi::LogicalSize,
+};
+use winit_utils::*;
 
 // module imports
 mod math;
@@ -33,6 +62,8 @@ mod bvh;
 mod trace;
 mod winit_utils;
 mod jobs;
+mod node;
+mod input;
 
 use math::*;
 use hitable::*;
@@ -47,6 +78,28 @@ use jobs::{Jobs, JobTask, MultiSliceReadWriteLock};
 // For tracking multithreading bugs
 const RUN_SINGLE_THREADED: bool = false;
 const OUTPUT_IMAGE_ON_CLOSE: bool = false;
+const FRAMES_IN_FLIGHT: u32 = 3;
+
+// Returns the cargo manifest directory when running the executable with cargo
+// or the directory in which the executable resides otherwise,
+// traversing symlinks if necessary.
+pub fn application_root_dir() -> String {
+    match std::env::var("CARGO_MANIFEST_DIR") {
+        Ok(_) => String::from(env!("CARGO_MANIFEST_DIR")),
+        Err(_) => {
+            let mut path = std::env::current_exe().expect("Failed to find executable path.");
+            while let Ok(target) = std::fs::read_link(path.clone()) {
+                path = target;
+            }
+            String::from(
+                path.parent()
+                    .expect("Failed to get parent directory of the executable.")
+                    .to_str()
+                    .unwrap(),
+            )
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct Config {
@@ -61,7 +114,27 @@ impl Config {
     }
 }
 
-pub fn run(config: Config) {
+#[derive(Default)]
+pub struct Aux<B: hal::Backend> {
+    pub frames: usize,
+    pub hw_alignment: u64,
+    pub tonemapper_args: node::tonemap::TonemapperArgs,
+    pub source_buffer: Option<Escape<Buffer<B>>>
+}
+
+#[cfg(not(any(feature = "dx12", feature = "metal", feature = "vulkan")))]
+pub fn run(config: Config) -> Result<(), failure::Error>{
+    Err(failure::err_msg("run with --feature dx/metal/vulkan"))
+}
+
+#[cfg(any(feature = "dx12", feature = "metal", feature = "vulkan"))]
+pub fn run(config: Config) -> Result<(), failure::Error>{
+
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Warn)
+        .filter_module("rendy", log::LevelFilter::Info)
+        .filter_module("path-tracer", log::LevelFilter::Trace)
+        .init();
 
     let nx: u32 = 1280;
     let ny: u32 = 720;
@@ -71,10 +144,132 @@ pub fn run(config: Config) {
     let window_width = nx as f64;
     let window_height = ny as f64;
 
-    let mut events_loop = winit::EventsLoop::new();
+    let buffer_size_elements = (nx*ny*4) as usize;
+    let rgba_texture = MultiSliceReadWriteLock::new(vec![0.0_f32; buffer_size_elements]);
+
+    for (pixel_index, colour) in rgba_texture.write().chunks_mut(4).enumerate() {
+        let u = (pixel_index as f32 % nx as f32) / nx as f32;
+        let v = (pixel_index as f32 / nx as f32) / ny as f32;
+        for (i, pixel) in colour.iter_mut().enumerate() {
+            match i {
+                0 => *pixel = u,
+                1 => *pixel = v,
+                2 => *pixel = 0.0,
+                3 => *pixel = 0.0,
+                _ => {}
+            }
+            //println!("u {}, v {}, i {} pixel_index {}", u, v, i, pixel_index);
+        }
+    }
+
+    let mut events_loop = winit::event_loop::EventLoop::new();
     let builder = WindowBuilder::new();
-    let window = builder.with_dimensions(LogicalSize{width: window_width, height: window_height}).build(&events_loop).unwrap();
+    let window = builder.with_inner_size(LogicalSize{width: window_width, height: window_height}).build(&events_loop).unwrap();
     window.set_title("Path Tracer");
+
+    //+ Rendy integration
+    let mut rendy: rendy::init::Rendy<Backend> = {
+        let config: rendy::factory::Config = Default::default();
+        rendy::init::Rendy::<Backend>::init(&config).map_err(|_|failure::err_msg("Could not initialise rendy"))?
+      //  AnyWindowedRendy::init_auto(&config, window, &events_loop).unwrap()
+    };
+    let surface = rendy.factory.create_surface(&window).map_err(|_|failure::err_msg("Could create backbuffer surface"))?;
+    let hw_alignment = hal::adapter::PhysicalDevice::limits(rendy.factory.physical())
+        .min_uniform_buffer_offset_alignment;
+    let queue = rendy.families
+        .as_slice()
+        .iter()
+        .find(|family| {
+            if let Some(Graphics) = family.capability().supports() {
+                true
+            } else {
+                false
+            }
+        })
+        .unwrap()
+        .as_slice()[0]
+        .id();
+
+    let source_buffer_size: u64 = (image_size.0 * image_size.1) as u64 * 4 * std::mem::size_of::<f32>() as u64;
+    let mut source_buffer = rendy.factory
+        .create_buffer(
+            BufferInfo {
+                size: source_buffer_size,
+                usage: hal::buffer::Usage::TRANSFER_SRC
+            },
+            rendy::memory::Upload
+        )
+        .map_err(|_| failure::err_msg("Unable to create source buffer"))?;
+
+    let source_buffer_size = source_buffer.size();
+    let mut mapped_buffer = source_buffer
+        .map(rendy.factory.device(), 0..source_buffer_size)
+        .map_err(|_| failure::err_msg("Unable to map source buffer"))?;
+
+    unsafe {
+        let buffer = rgba_texture.read();
+        let buffer_size = buffer.len() * std::mem::size_of::<f32>();
+        let mut writer = mapped_buffer
+            .write(rendy.factory.device(), 0..(buffer_size as u64))
+            .map_err(|_| failure::err_msg("Unable to map source buffer"))?;
+        writer.write(buffer.as_slice());
+    }
+
+    let mut graph_builder = GraphBuilder::<Backend, Aux<Backend>>::new();
+
+    let source_image = graph_builder.create_image(
+        hal::image::Kind::D2(image_size.0, image_size.1, 1, 1), 
+        1, 
+        hal::format::Format::Rgba32Sfloat, 
+        Some(hal::command::ClearValue {
+            color: hal::command::ClearColor {
+                float32: [1.0, 1.0, 1.0, 1.0],
+            },
+        }),
+    );
+
+    let color = graph_builder.create_image(
+        hal::image::Kind::D2(image_size.0, image_size.1, 1, 1),
+        1,
+        rendy.factory.get_surface_format(&surface),
+        Some(hal::command::ClearValue {
+            color: hal::command::ClearColor {
+                float32: [1.0, 1.0, 1.0, 1.0],
+            },
+        }),
+    );
+
+    let copy_texture_node = graph_builder.add_node(
+        node::copy_image::CopyToTexture::<Backend>::builder(
+            source_image
+        )
+    );
+
+    let tonemap_pass = graph_builder.add_node(
+        node::tonemap::Pipeline::builder()
+                .with_image(source_image)
+                .into_subpass()
+                .with_dependency(copy_texture_node)
+                .with_color(color)
+                .into_pass(),
+    );
+    graph_builder.add_node(PresentNode::builder(&rendy.factory, surface, color).with_dependency(tonemap_pass));
+    
+    let mut aux = Aux {
+        frames: FRAMES_IN_FLIGHT as usize,
+        hw_alignment,
+        tonemapper_args: node::tonemap::TonemapperArgs {
+            clear_colour_and_exposure: [0.0, 1.0, 0.0, 1.0],
+        },
+        source_buffer: Some(source_buffer)
+    };
+
+    let frame_graph = graph_builder
+        .with_frames_in_flight(FRAMES_IN_FLIGHT)
+        .build(&mut rendy.factory, &mut rendy.families, &mut aux).map_err(|_|failure::err_msg("Could not build graph"))?;
+
+    let mut frame_graph = Some(frame_graph);
+    //- Rendy integration
 
     let start_timer = Instant::now();
     
@@ -82,7 +277,8 @@ pub fn run(config: Config) {
 
     //let world = two_spheres();
     //let world = four_spheres();
-    let world = random_scene(0.0, 1000.0);
+    //let world = random_scene(0.0, 1000.0);
+    let world = two_perlin_spheres();
 
     let lookfrom = Vec3::new(0.0,4.0,13.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
@@ -95,11 +291,10 @@ pub fn run(config: Config) {
    // let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
     let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0);
 
-    // TODO(SS): This is temporary and will be handled by the GPU. Tonemap, gamma and convert to uint.
-    let convert_to_u8_and_gamma_correct = |buffer: &Vec<f32>| -> Vec<u8>{
+    let convert_to_rgb_u8_and_gamma_correct = |buffer: &Vec<f32>| -> Vec<u8>{
         let mut output = Vec::with_capacity(buffer.len());
-         buffer.chunks(3).map(|chunk| {
-            let colour = Vec3::new(chunk[2] as f64,chunk[1] as f64,chunk[0] as f64);
+         buffer.chunks(4).map(|chunk| {
+            let colour = Vec3::new(chunk[0] as f64,chunk[1] as f64,chunk[2] as f64);
             reinhard_tonemap(&colour)
         }).for_each(|colour|{   output.push((255.99 * colour.z.sqrt()) as u8);
                                 output.push((255.99 * colour.y.sqrt()) as u8);
@@ -109,9 +304,7 @@ pub fn run(config: Config) {
     };
 
 
-    let buffer_size_bytes = (nx*ny*3) as usize;
-    let bgr_texture = MultiSliceReadWriteLock::new(vec![0.0_f32; buffer_size_bytes]);
-    update_window_framebuffer(&window, &mut convert_to_u8_and_gamma_correct(bgr_texture.read()), image_size);
+   // update_window_framebuffer(&window, &mut convert_to_u8_and_gamma_correct(bgr_texture.read()), image_size);
 
     let num_cores = num_cpus::get();
     println!("Running on {} cores", num_cores);
@@ -129,11 +322,11 @@ pub fn run(config: Config) {
     let default_disable_emissive = config.realtime; // Disable emissive for realtime by default as it's noisy
     let default_sky_brightness = if default_disable_emissive {1.0} else {0.6};
     let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window, 0.0, 1.0/60.0, default_sky_brightness, default_disable_emissive, config)));
-    let scene_output = Arc::new(SceneOutput::new(bgr_texture, remaining_tasks, window_lock));
+    let scene_output = Arc::new(SceneOutput::new(rgba_texture, remaining_tasks, window_lock));
 
     if !config.realtime {
         if !RUN_SINGLE_THREADED {
-            let mut batches: Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>> = vec![];
+            let mut batches: Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>> = vec![];
             for task_y in 0..num_tasks_xy.1 {
                 for task_x in 0..num_tasks_xy.0 {
                     let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
@@ -150,28 +343,28 @@ pub fn run(config: Config) {
 
             Jobs::dispatch_jobs(&batches);
 
-            loop {
-                // Poll message loop while we trace so we can early-exit
-                events_loop.poll_events(|event| {
-                    use winit::VirtualKeyCode;
-                    match event {
-                        Event::WindowEvent { event, .. } => match event {
-                            WindowEvent::KeyboardInput { input, .. } => {
-                                if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
-                                    std::process::exit(0);
-                                }
-                            }
-                            WindowEvent::CloseRequested => std::process::exit(0),
-                            _ => {},
-                        },
-                        _ => {},
-                    }
-                });
+          // loop {
+          //     // Poll message loop while we trace so we can early-exit
+          //     events_loop.run(move |event, _, control_flow| {
+          //         *control_flow = ControlFlow::Poll;
+          //         match event {
+          //             Event::WindowEvent { event, .. } => match event {
+          //                 WindowEvent::KeyboardInput { input, .. } => {
+          //                     if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
+          //                         std::process::exit(0);
+          //                     }
+          //                 }
+          //                 WindowEvent::CloseRequested => std::process::exit(0),
+          //                 _ => {},
+          //             },
+          //             _ => {},
+          //         }
+          //     });
 
                 // wait for threads to finish by checking atomic ref count on the shared image buffer
                 // Note(SS): Could use condvars here but then wouldn't be able to poll the message queue
                 if scene_output.remaining_tasks.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
-                    break;
+                    //break;
                 }
 
                 let percent_done = ((num_tasks - scene_output.remaining_tasks.load(Ordering::Relaxed) as u32) as f32 / num_tasks as f32) * 100.0;
@@ -180,7 +373,6 @@ pub fn run(config: Config) {
 
                 // yield thread
                 thread::sleep(Duration::from_secs(1));
-            }
         } else {
             let start_xy = (0, 0);
             let end_xy = image_size;
@@ -200,36 +392,33 @@ pub fn run(config: Config) {
 
         // write image 
         let image_file_name = "output.ppm";
-        save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+        save_rgb_texture_as_ppm(image_file_name, &convert_to_rgb_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
 
-        events_loop.run_forever(|event| {
-            use winit::VirtualKeyCode;
-            match event {
-                Event::WindowEvent { event, .. } => match event {
-                    WindowEvent::KeyboardInput { input, .. } => {
-                        if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
-                            ControlFlow::Break
-                        } else {
-                            ControlFlow::Continue
-                        }
-                    }
-                    WindowEvent::CloseRequested => winit::ControlFlow::Break,
-                    WindowEvent::Resized(..) => {
-                        update_window_framebuffer(&scene_state.read().window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
-                        ControlFlow::Continue
-                    },
-                    _ => ControlFlow::Continue,
-                },
-                 _ => ControlFlow::Continue,
-            }
-        });
+      // events_loop.run(move |event, _, control_flow| {
+      //     *control_flow = ControlFlow::Wait;
+      //     match event {
+      //         Event::WindowEvent { event, .. } => match event {
+      //             WindowEvent::KeyboardInput { input, .. } => {
+      //                 if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
+      //                     *control_flow = ControlFlow::Exit;
+      //                 }
+      //             }
+      //             WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+      //             WindowEvent::Resized(..) => {
+      //                 update_window_framebuffer(&scene_state.read().window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+      //             },
+      //             _ => {}
+      //         },
+      //          _ => {},
+      //     }
+      // });
 
     } else  {
     
         let controls_string = "Controls: O/P - Decrease/Increase Sky Brightness;  B - Toggle Emissive";
 
         let mut batches = vec![];
-        let mut jobs: Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>>  = vec![];
+        let mut jobs: Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>>  = vec![];
         for task_y in 0..num_tasks_xy.1 {
             for task_x in 0..num_tasks_xy.0 {
                 let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
@@ -246,226 +435,57 @@ pub fn run(config: Config) {
             }
         }
 
-        const CAM_SPEED: f64 = 4.0;
-        const MOUSE_LOOK_SPEED: f64 = 0.4;
-        //const MOUSE_THRESHOLD: 
-        let mut keep_running = true;
+        
         let mut fps = 0.0;
-        let mut move_forward = false;
         let mut frame_time = 1.0 / 60.0;
-        let mut move_left = false;
-        let mut move_right = false;
-        let mut move_backward = false;
-        let mut move_up = false;
-        let mut move_down = false;
-        let mut look_right = false;
-        let mut look_left = false;
-        let mut look_up = false;
-        let mut look_down = false;
-        let mut left_mouse_down = false;
-        let mut right_mouse_down = false;
-        let mut mouse_x = 0.0;
-        let mut mouse_y = 0.0;
-        let mut b_down  = false;
-        while keep_running {
+        let mut frame_counter = 0;
+
+        let mut app_user_input_state: input::AppUserInputState = Default::default();
+
+        loop {
 
             let start_timer = Instant::now();
 
-            // App logic - modifying of shared state allowed
+            let mut clear_scene = false;
             {
                 let mut scene_state_writable = scene_state.write();
-                let mut clear_scene = false;
-
                 // update time
                 scene_state_writable.time0 = scene_state_writable.time1;
                 scene_state_writable.time1 += frame_time;
+            }
 
-                let dpi = scene_state_writable.window.get_current_monitor().get_hidpi_factor();
+            let user_input = input::UserInput::poll_events_loop(&mut events_loop, &mut scene_state.write().window, &mut app_user_input_state);  
 
-                // TODO(SS): debouncing, needs moving to struct
-                let mouse_x_last_frame = mouse_x;
-                let mouse_y_last_frame = mouse_y;
-                let _left_mouse_down_last_frame = left_mouse_down;
-                let right_mouse_down_last_frame = right_mouse_down;
-                let b_down_last_frame = b_down;
-                b_down = false;
-              //  right_mouse_down = false;
-              //  mouse_x = 0.0;
-              //  mouse_y = 0.0;
-              //  left_mouse_down = false;
+            if user_input.keys_pressed.contains(&VirtualKeyCode::O) {
+                clear_scene = true;
+                let mut scene_state_writable = scene_state.write();
+                scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
+            }
+            
+            if user_input.keys_pressed.contains(&VirtualKeyCode::P) {
+                clear_scene = true;
+                let mut scene_state_writable = scene_state.write();
+                scene_state_writable.sky_brightness += 0.05;
+            }
+            
+            if user_input.keys_pressed.contains(&VirtualKeyCode::B) {
+                let mut scene_state_writable = scene_state.write();
+                scene_state_writable.disable_emissive = !scene_state_writable.disable_emissive;
+                clear_scene = true;
+            }
 
-                events_loop.poll_events(|event| {
-                    use winit::VirtualKeyCode;
-                    use winit::MouseButton;
-                    use winit::ElementState;
-                    match event {
-                    Event::WindowEvent { event, .. } => match event {
-                            WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
-                                Some(VirtualKeyCode::Escape) => keep_running = false,
-                                Some(VirtualKeyCode::W) => move_forward = true,
-                                Some(VirtualKeyCode::S) => move_backward = true,
-                                Some(VirtualKeyCode::D) => move_right = true,
-                                Some(VirtualKeyCode::A) => move_left = true,
-                                Some(VirtualKeyCode::Q) => move_down = true,
-                                Some(VirtualKeyCode::E) => move_up = true,
-                                Some(VirtualKeyCode::Right) => look_right = true,
-                                Some(VirtualKeyCode::Left) => look_left = true,
-                                Some(VirtualKeyCode::Up) => look_up = true,
-                                Some(VirtualKeyCode::Down) => look_down = true,
-                                Some(VirtualKeyCode::O) => {
-                                    clear_scene = true;
-                                    scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
-                                },
-                                Some(VirtualKeyCode::P) => {
-                                    clear_scene = true;
-                                    scene_state_writable.sky_brightness += 0.05;
-                                },
-                                Some(VirtualKeyCode::B) => b_down = true,
-                                _ => {},
-                            },
-                            WindowEvent::MouseInput { state, button, .. } => {
-                                if button == MouseButton::Left {
-                                    left_mouse_down = if state == ElementState::Pressed {true} else {false};
-                                }
-                                if button == MouseButton::Right {
-                                    right_mouse_down = if state == ElementState::Pressed {true} else {false};
-                                }
-                            },
-                            WindowEvent::CursorMoved { position, .. } => {
-                                // Note(SS): This position is not ideal for mouse movement as it contains OS overrides like mouse accel.
-                                let physical_position = position.to_physical(dpi);
-                                mouse_x = physical_position.x;
-                                mouse_y = -physical_position.y;
-                            },
-                            WindowEvent::CloseRequested => keep_running = false,
-                            WindowEvent::Resized(..) => update_window_framebuffer(&scene_state_writable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size),
-                            _ => {},
-                        },
-                        _ => {},
-                    }
-                });
+            // handle input for camera
+            {
+                let mut scene_state_writable = scene_state.write();
+                let cam = &mut scene_state_writable.cam;
+                let camera_moved = cam.update_from_input(&user_input, frame_time);
 
-                if b_down_last_frame && !b_down {
-                    scene_state_writable.disable_emissive = !scene_state_writable.disable_emissive;
-                    clear_scene = true;
-                }
+                if camera_moved || clear_scene {
+                    cam.update();
+                    batches.iter().for_each(|batch| batch.write().clear_buffer());
+                    let buffer = scene_output.buffer.write();
+                    *buffer = vec![0.0_f32; buffer_size_elements];
 
-                // handle input for camera
-                // TODO(SS): Move state into app struct and move to function just to keep this loop tidier
-                {
-                    let cam = &mut scene_state_writable.cam;
-                    let mut camera_moved = false;
-                    if move_forward {
-                        move_forward = false;
-                        let cam_origin = cam.get_origin();
-                        let cam_forward = cam.get_forward();
-                        let diff = cam_forward * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, true);
-                        camera_moved = true;
-                    } 
-
-                    if move_backward {
-                        move_backward = false;
-                        let cam_origin = cam.get_origin();
-                        let cam_forward = cam.get_forward();
-                        let diff = -cam_forward * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, true);
-                        camera_moved = true;
-                    }
-
-                    if move_right {
-                        move_right = false;
-                        let cam_origin = cam.get_origin();
-                        let cam_right = cam.get_right();
-                        let diff = cam_right * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, true);
-                        camera_moved = true;
-                        
-                    }
-
-                    if move_left {
-                        move_left = false;
-                        let cam_origin = cam.get_origin();
-                        let cam_right = cam.get_right();
-                        let diff = -cam_right * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, true);
-                        camera_moved = true;
-                    }
-
-                    if move_up {
-                        move_up = false;
-                        let cam_origin = cam.get_origin();
-                        let cam_up = cam.get_up();
-                        let diff = cam_up * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, true);
-                        camera_moved = true;
-                    }
-
-                    if move_down {
-                        move_down = false;
-                        let cam_origin = cam.get_origin();
-                        let cam_up = cam.get_up();
-                        let diff = -cam_up * CAM_SPEED * frame_time;
-                        cam.set_origin(cam_origin + &diff, true);
-                        camera_moved = true;
-                    }
-                    
-                    if look_right {
-                        look_right = false;
-                        let cam_look_at = cam.get_look_at();
-                        let cam_right = cam.get_right();
-                        cam.set_look_at(cam_look_at + cam_right * CAM_SPEED * frame_time, true);
-                        camera_moved = true;
-                    }
-                    if look_left {
-                        look_left = false;
-                        let cam_look_at = cam.get_look_at();
-                        let cam_right = cam.get_right();
-                        cam.set_look_at(cam_look_at + -cam_right * CAM_SPEED * frame_time, true);
-                        camera_moved = true;
-                    }
-                    if look_up {
-                        look_up = false;
-                        let cam_look_at = cam.get_look_at();
-                        let cam_up = cam.get_up();
-                        cam.set_look_at(cam_look_at + cam_up * CAM_SPEED * frame_time, true);
-                        camera_moved = true;
-                    }
-                    if look_down {
-                        look_down = false;
-                        let cam_look_at = cam.get_look_at();
-                        let cam_up = cam.get_up();
-                        cam.set_look_at(cam_look_at + -cam_up * CAM_SPEED * frame_time, true);
-                        camera_moved = true;
-                    }
-                    if right_mouse_down && right_mouse_down_last_frame {
-                        let mouse_x_delta = mouse_x - mouse_x_last_frame;
-                        let mouse_y_delta = mouse_y - mouse_y_last_frame;
-                        if mouse_x_delta != 0.0 || mouse_y_delta != 0.0
-                        { 
-                            let mut cam_look_at = cam.get_look_at();
-                            let cam_right = cam.get_right();
-                            let cam_up = cam.get_up();
-                            if mouse_x_delta != 0.0 {
-                                cam_look_at += cam_right * MOUSE_LOOK_SPEED * frame_time * mouse_x_delta
-                            }
-                            if mouse_y_delta != 0.0 {
-                                cam_look_at += cam_up * MOUSE_LOOK_SPEED * frame_time * mouse_y_delta;
-                            }
-
-                            cam.set_look_at(cam_look_at, true);
-                            camera_moved = true;
-                        }
-                    }
-
-
-                    if camera_moved || clear_scene {
-                        cam.update();
-                        batches.iter().for_each(|batch| batch.write().clear_buffer());
-                        let buffer = scene_output.buffer.write();
-                        *buffer = vec![0.0_f32; buffer_size_bytes];
-
-                    }
                 }
             }
 
@@ -474,7 +494,27 @@ pub fn run(config: Config) {
 
             let scene_state_readable = scene_state.read();
 
-            update_window_framebuffer(&scene_state_readable.window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+            let source_buffer_size = aux.source_buffer.as_ref().unwrap().size();
+            let mut mapped_buffer = aux.source_buffer
+                .as_mut()
+                .unwrap()
+                .map(rendy.factory.device(), 0..source_buffer_size).unwrap();
+    
+            unsafe {
+                let buffer = scene_output.buffer.read();
+                let buffer_size = buffer.len() * std::mem::size_of::<f32>();
+                let mut writer = mapped_buffer
+                    .write(rendy.factory.device(), 0..(buffer_size as u64))
+                    .unwrap();
+                writer.write(buffer.as_slice());
+            }
+
+            //+ Rendy Integration
+            rendy.factory.maintain(&mut rendy.families);
+            if let Some(ref mut frame_graph) = frame_graph {
+                frame_graph.run(&mut rendy.factory, &mut rendy.families, &mut aux);
+            }
+            frame_counter += 1;
 
             // throttle main thread to 60fps
             const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
@@ -489,23 +529,34 @@ pub fn run(config: Config) {
             frame_time = frame_duration.as_secs() as f64 + frame_duration.subsec_nanos() as f64 * 1e-9;
 
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
-            scene_state_readable.window.set_title(&format!("Path Tracer: FPS = {}  |  Sky Brightness = {}; Emissive = {}  |  {}", fps as i32,
-                                                            scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, controls_string));
-        }
+            scene_state_readable.window
+                .set_title(
+                    &format!("Path Tracer: FPS = {} (time={:.2}ms) |  Frame = {} | Sky Brightness = {}; Emissive = {} | {}", 
+                             fps as i32, frame_time*1000.0, frame_counter,scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, controls_string));
 
-        // write image 
-        if OUTPUT_IMAGE_ON_CLOSE {
-            let image_file_name = "output.ppm";
-            save_bgr_texture_as_ppm(image_file_name, &convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+            if user_input.exit_requested {
+                // write image 
+                if OUTPUT_IMAGE_ON_CLOSE {
+                    let image_file_name = "output.ppm";
+                    save_rgba_texture_as_ppm(image_file_name, &convert_to_rgb_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+                }
+
+                frame_graph.take().unwrap().dispose(&mut rendy.factory, &mut aux);
+                println!("Exit requested");
+                break;
+            }
         }
     }
+
+    Ok(())
 }
 
-fn update_window_title_status(window: &winit::Window, status: &str) {
+fn update_window_title_status(window: &winit::window::Window, status: &str) {
     println!("{}", status);
     window.set_title(&format!("Path Tracer: {}", status));
 }
 
+#[allow(dead_code)]
 fn save_bgr_texture_as_ppm(filename: &str, bgr_buffer: &Vec<u8>, buffer_size: (u32,u32)) {
     
     let timer = Instant::now();
@@ -536,11 +587,72 @@ fn save_bgr_texture_as_ppm(filename: &str, bgr_buffer: &Vec<u8>, buffer_size: (u
 }
 
 #[allow(dead_code)]
-fn two_spheres() -> Box<Hitable + Send + Sync + 'static> {
+fn save_rgb_texture_as_ppm(filename: &str, buffer: &Vec<u8>, buffer_size: (u32,u32)) {
+    
+    let timer = Instant::now();
+    
+    // convert to rgb buffer and flip horizontally as (0,0) is bottom left for ppm
+    let buffer_length = buffer.len();
+    let mut rgb_buffer = vec![0; buffer_length];
+    for j in 0..buffer_size.1 {
+        let j_flipped = buffer_size.1 - j - 1;
+        for i in 0..buffer_size.0 {
+            let rgb_offset_x = i * 3;
+            let rgb_offset = (j * buffer_size.0 * 3 + rgb_offset_x) as usize;
+            let buffer_offset = (j_flipped * buffer_size.0  * 3 + rgb_offset_x) as usize;
+            rgb_buffer[rgb_offset]   = buffer[buffer_offset];
+            rgb_buffer[rgb_offset+1] = buffer[buffer_offset+1];
+            rgb_buffer[rgb_offset+2] = buffer[buffer_offset+2];
+        }
+    }
+    
+    let mut output_image = File::create(filename).expect("Could not open file for write");
+    let header = format!("P6 {} {} 255\n", buffer_size.0, buffer_size.1);
+    output_image.write(header.as_bytes()).expect("failed to write to image file");
+    output_image.write(&rgb_buffer).expect("failed to write to image");
+
+    let duration = timer.elapsed();
+    let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
+    println!("{} saved in {}s", filename, duration_in_secs);
+}
+
+#[allow(dead_code)]
+fn save_rgba_texture_as_ppm(filename: &str, rgba_buffer: &Vec<u8>, buffer_size: (u32,u32)) {
+    
+    let timer = Instant::now();
+    
+    // convert to rgb buffer and flip horizontally as (0,0) is bottom left for ppm
+    let buffer_length = rgba_buffer.len();
+    let mut rgb_buffer = vec![0; buffer_length];
+    for j in 0..buffer_size.1 {
+        let j_flipped = buffer_size.1 - j - 1;
+        for i in 0..buffer_size.0 {
+            let rgb_offset_x = i * 3;
+            let rgba_offset_x = i * 4;
+            let rgb_offset = (j * buffer_size.0 * 3 + rgb_offset_x) as usize;
+            let rgba_offset = (j_flipped * buffer_size.0  * 3 + rgba_offset_x) as usize;
+            rgb_buffer[rgb_offset]   = rgba_buffer[rgba_offset];
+            rgb_buffer[rgb_offset+1] = rgba_buffer[rgba_offset+1];
+            rgb_buffer[rgb_offset+2] = rgba_buffer[rgba_offset+2];
+        }
+    }
+    
+    let mut output_image = File::create(filename).expect("Could not open file for write");
+    let header = format!("P6 {} {} 255\n", buffer_size.0, buffer_size.1);
+    output_image.write(header.as_bytes()).expect("failed to write to image file");
+    output_image.write(&rgb_buffer).expect("failed to write to image");
+
+    let duration = timer.elapsed();
+    let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
+    println!("{} saved in {}s", filename, duration_in_secs);
+}
+
+#[allow(dead_code)]
+fn two_spheres() -> Box<dyn Hitable + Send + Sync + 'static> {
     let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(1.0, 0.0, 0.0))), 0.0));
     let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.0, 1.0))), 0.0));
 
-    let list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![
+    let list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![
         Arc::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, red_material)),
         Arc::new(Sphere::new(Vec3::new(0.0,  10.0, 0.0), 10.0, blue_material)),
     ];
@@ -549,7 +661,7 @@ fn two_spheres() -> Box<Hitable + Send + Sync + 'static> {
 }
 
 #[allow(dead_code)]
-fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
+fn four_spheres() -> Box<dyn Hitable + Send + Sync + 'static> {
     let red_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.0, 0.0))), 0.0));
     let blue_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.3, 0.3, 0.3))), 0.0));
     let green_material = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.0, 0.9, 0.0))), 0.0));
@@ -558,7 +670,7 @@ fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
     let dielectric_material = Arc::new(Dielectric::new(1.6));
     let metal_material = Arc::new(Metal::new(Vec3::from_float(1.0), 0.0));
 
-    let list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![
+    let list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![
         Arc::new(Sphere::new(Vec3::new(4.0, -0.3, 0.7), 0.3, red_material)),
         Arc::new(Sphere::new(Vec3::new(0.0,  -100.5, -1.0), 100.0, blue_material)),
         Arc::new(Sphere::new(Vec3::new(1.0,  0.0, -1.0), 0.5, green_material)),
@@ -575,11 +687,11 @@ fn four_spheres() -> Box<Hitable + Send + Sync + 'static> {
 }
 
 #[allow(dead_code)]
-fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> {
+fn random_scene(t_min: f64, t_max: f64) -> Box<dyn Hitable + Send + Sync + 'static> {
     let checker_texture = Arc::new(CheckerTexture::new(Arc::new(ConstantTexture::new(Vec3::new(0.2, 0.3, 0.1))), 
                                                       Arc::new(ConstantTexture::new(Vec3::new(0.9, 0.9, 0.9)))));
 
-    let mut list: Vec<Arc<Hitable + Send + Sync + 'static>> = vec![];
+    let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
 
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(checker_texture.clone(), 0.0)))));
 
@@ -592,7 +704,7 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> 
                 let choose_mat = random::rand();
                 let mut center = Vec3::new(a as f64 + 0.9 * random::rand(), 0.2, b as f64 + 0.9 * random::rand());
                 if (&center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
-                    let material: Arc<Material + Send + Sync + 'static>;
+                    let material: Arc<dyn Material + Send + Sync + 'static>;
                     let mut is_emissive = false;
                     if choose_mat < 0.6 { // diffuse 
                         is_emissive = random::rand() < 0.1;
@@ -627,4 +739,12 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<Hitable + Send + Sync + 'static> 
     list.push(Arc::new(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0,Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)))));
 
     Box::new(BvhNode::from_list(list, t_min, t_max))
+}
+
+fn two_perlin_spheres() -> Box<dyn Hitable + Send + Sync + 'static> {
+    let perlin_texture = Arc::new(texture::NoiseTexture::new());
+    let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(perlin_texture.clone(), 0.0)))));
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, 2.0, 0.0), 2.0, Arc::new(Lambertian::new(perlin_texture.clone(), 0.0)))));
+    Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }

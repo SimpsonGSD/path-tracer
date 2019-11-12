@@ -8,11 +8,11 @@ pub struct HitRecord {
     pub v: f64,
     pub p: Vec3,
     pub normal: Vec3,
-    pub mat: Arc<Material + Send + Sync + 'static>
+    pub mat: Arc<dyn Material + Send + Sync + 'static>
 }
 
 impl HitRecord {
-    pub fn new(t: f64, u: f64, v: f64, p: Vec3, normal: Vec3, mat: Arc<Material + Send + Sync + 'static>) -> HitRecord {
+    pub fn new(t: f64, u: f64, v: f64, p: Vec3, normal: Vec3, mat: Arc<dyn Material + Send + Sync + 'static>) -> HitRecord {
         HitRecord {
             t,
             u,
@@ -30,11 +30,11 @@ pub trait Hitable {
 }
 
 pub struct HitableList {
-    list: Vec<Arc<Hitable + Send + Sync + 'static>>
+    list: Vec<Arc<dyn Hitable + Send + Sync + 'static>>
 }
 
 impl HitableList {
-    pub fn new(list: Vec<Arc<Hitable + Send + Sync + 'static>>) -> HitableList {
+    pub fn new(list: Vec<Arc<dyn Hitable + Send + Sync + 'static>>) -> HitableList {
         HitableList { list }
     }
 }

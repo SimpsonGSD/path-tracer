@@ -1,5 +1,6 @@
 use std::f64::consts::PI;
 use math::*;
+use crate::input;
 
 #[allow(dead_code)]
 pub struct Camera {
@@ -102,6 +103,114 @@ impl Camera {
             look_at *= look_at_dist / new_look_at_dist;
         }
         self.look_at = look_at;
+    }
+    
+    pub fn update_from_input(
+        &mut self, 
+        user_input: &input::UserInput, 
+        frame_time: f64) 
+    -> bool {
+        use rendy::init::winit::event::*;
+
+        const CAM_SPEED: f64 = 4.0;
+        const MOUSE_LOOK_SPEED: f64 = 0.4;
+
+        let mut camera_moved = false;
+
+        if user_input.keys_pressed.contains(&VirtualKeyCode::W) {
+            let cam_origin = self.get_origin();
+            let cam_forward = self.get_forward();
+            let diff = cam_forward * CAM_SPEED * frame_time;
+            self.set_origin(cam_origin + &diff, true);
+            camera_moved = true;
+        } 
+
+        if user_input.keys_pressed.contains(&VirtualKeyCode::S) {
+            let cam_origin = self.get_origin();
+            let cam_forward = self.get_forward();
+            let diff = -cam_forward * CAM_SPEED * frame_time;
+            self.set_origin(cam_origin + &diff, true);
+            camera_moved = true;
+        }
+
+        if user_input.keys_pressed.contains(&VirtualKeyCode::D) {
+            let cam_origin = self.get_origin();
+            let cam_right = self.get_right();
+            let diff = cam_right * CAM_SPEED * frame_time;
+            self.set_origin(cam_origin + &diff, true);
+            camera_moved = true;
+            
+        }
+
+        if user_input.keys_pressed.contains(&VirtualKeyCode::A) {
+            let cam_origin = self.get_origin();
+            let cam_right = self.get_right();
+            let diff = -cam_right * CAM_SPEED * frame_time;
+            self.set_origin(cam_origin + &diff, true);
+            camera_moved = true;
+        }
+
+        if user_input.keys_pressed.contains(&VirtualKeyCode::E) {
+            let cam_origin = self.get_origin();
+            let cam_up = self.get_up();
+            let diff = cam_up * CAM_SPEED * frame_time;
+            self.set_origin(cam_origin + &diff, true);
+            camera_moved = true;
+        }
+
+        if user_input.keys_pressed.contains(&VirtualKeyCode::Q) {
+            let cam_origin = self.get_origin();
+            let cam_up = self.get_up();
+            let diff = -cam_up * CAM_SPEED * frame_time;
+            self.set_origin(cam_origin + &diff, true);
+            camera_moved = true;
+        }
+        
+        if user_input.keys_held.contains(&VirtualKeyCode::Right) {
+            let cam_look_at = self.get_look_at();
+            let cam_right = self.get_right();
+            self.set_look_at(cam_look_at + cam_right * CAM_SPEED * frame_time, true);
+            camera_moved = true;
+        }
+        if user_input.keys_held.contains(&VirtualKeyCode::Left) {
+            let cam_look_at = self.get_look_at();
+            let cam_right = self.get_right();
+            self.set_look_at(cam_look_at + -cam_right * CAM_SPEED * frame_time, true);
+            camera_moved = true;
+        }
+        if user_input.keys_held.contains(&VirtualKeyCode::Up) {
+            let cam_look_at = self.get_look_at();
+            let cam_up = self.get_up();
+            self.set_look_at(cam_look_at + cam_up * CAM_SPEED * frame_time, true);
+            camera_moved = true;
+        }
+        if user_input.keys_held.contains(&VirtualKeyCode::Down) {
+            let cam_look_at = self.get_look_at();
+            let cam_up = self.get_up();
+            self.set_look_at(cam_look_at + -cam_up * CAM_SPEED * frame_time, true);
+            camera_moved = true;
+        }
+        if user_input.mouse_delta != (0.0,0.0) {
+            let mouse_x_delta = user_input.mouse_delta.0;
+            let mouse_y_delta = user_input.mouse_delta.1;
+            if mouse_x_delta != 0.0 || mouse_y_delta != 0.0
+            { 
+                let mut cam_look_at = self.get_look_at();
+                let cam_right = self.get_right();
+                let cam_up = self.get_up();
+                if mouse_x_delta != 0.0 {
+                    cam_look_at += cam_right * MOUSE_LOOK_SPEED * frame_time * mouse_x_delta
+                }
+                if mouse_y_delta != 0.0 {
+                    cam_look_at += cam_up * MOUSE_LOOK_SPEED * frame_time * mouse_y_delta;
+                }
+
+                self.set_look_at(cam_look_at, true);
+                camera_moved = true;
+            }
+        }
+
+        camera_moved
     }
 
     //pub fn get_look

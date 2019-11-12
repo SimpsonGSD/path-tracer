@@ -1,21 +1,30 @@
 
-pub fn get_physical_window_size(window: &winit::Window) -> (f64, f64) {
-    let dpi_factor = window.get_current_monitor().get_hidpi_factor();
-    let window_size = window.get_inner_size().unwrap().to_physical(dpi_factor);
+use rendy::init::winit;
+use winit::{ 
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::{WindowBuilder},
+    dpi::LogicalSize,
+};
+
+#[allow(dead_code)]
+pub fn get_physical_window_size(window: &winit::window::Window) -> (f64, f64) {
+    let window_size = window.inner_size().to_physical(window.hidpi_factor());
     (window_size.width, window_size.height)
 }
 
+#[allow(dead_code)]
 #[cfg(target_os = "windows")]
-pub fn update_window_framebuffer(window: &winit::Window, 
+pub fn update_window_framebuffer(window: &winit::window::Window, 
                                  buffer: &mut Vec<u8>, 
                                  buffer_size: (u32, u32)) {
     use winapi::shared::windef::HWND;
     use winapi::um::winuser::GetDC;
-    use winit::os::windows::WindowExt;
+    use winit::platform::windows::WindowExtWindows ;
     use winapi::um::wingdi::{StretchDIBits, DIB_RGB_COLORS, SRCCOPY, BITMAPINFO, BI_RGB, RGBQUAD, BITMAPINFOHEADER};
     use winapi::ctypes::c_void;
     
-    let hwnd = window.get_hwnd() as HWND;
+    let hwnd = window.hwnd() as HWND;
     let window_size = get_physical_window_size(&window);
 
     // Note(SS): Top left is (0,0).
@@ -63,17 +72,18 @@ pub fn update_window_framebuffer(window: &winit::Window,
 
 }
 
-pub fn update_window_framebuffer_rect(window: &winit::Window, 
+#[allow(dead_code)]
+pub fn update_window_framebuffer_rect(window: &winit::window::Window, 
                                   buffer: &mut Vec<u8>, 
                                   window_pos: (u32, u32), 
                                   buffer_size: (u32, u32)) {
     use winapi::shared::windef::HWND;
     use winapi::um::winuser::GetDC;
-    use winit::os::windows::WindowExt;
+    use winit::platform::windows::WindowExtWindows ;
     use winapi::um::wingdi::{StretchDIBits, DIB_RGB_COLORS, SRCCOPY, BITMAPINFO, BI_RGB, RGBQUAD, BITMAPINFOHEADER};
     use winapi::ctypes::c_void;
     
-    let hwnd = window.get_hwnd() as HWND;
+    let hwnd = window.hwnd() as HWND;
 
     // Note(SS): Top left is (0,0).
 

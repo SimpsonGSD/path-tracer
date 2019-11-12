@@ -1,0 +1,188 @@
+{
+	// See https://go.microsoft.com/fwlink/?LinkId=733558 
+	// for the documentation about the tasks.json format
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Rust: cargo clean",
+			"type": "shell",
+			"group": "build",
+			"command": "cargo clean",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "Rust: cargo check",
+			"type": "shell",
+			"group": "build",
+			"command": "cargo check --features vulkan",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "Rust: cargo build windows/linux [debug]",
+			"type": "shell",
+			"group": "build",
+			"command": "cargo build --features vulkan",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "Rust: cargo build windows/linux [release]",
+			"type": "shell",
+			"group": "build",
+			"command": "cargo build --release --features vulkan",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "Rust: cargo run windows/linux [debug]",
+			"group": "build",
+			"type": "shell",
+			"command": "cargo run --features vulkan",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "Rust: cargo run windows/linux [release]",
+			"group": "build",
+			"type": "shell",
+			"command": "cargo run --release --features vulkan",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "Rust: cargo build mac [debug]",
+			"type": "shell",
+			"group": "build",
+			"command": "cargo build --features metal",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "Rust: cargo build mac [release]",
+			"type": "shell",
+			"group": "build",
+			"command": "cargo build --release --features metal",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "Rust: cargo run mac [debug]",
+			"group": "build",
+			"type": "shell",
+			"command": "cargo run --features metal",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+		},
+		{
+			"label": "Rust: cargo run mac [release]",
+			"group": "build",
+			"type": "shell",
+			"command": "cargo run --release --features metal",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+        },
+        {
+			"label": "Rust: cargo run [release] (example)",
+			"group": "build",
+			"type": "shell",
+			"command": "cargo run --release -- --quality=${input:qualityPicker} ${input:debugPicker}",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"clear": true
+			}
+		}
+	],
+	"inputs":[
+		{
+			"id": "qualityPicker",
+			"description": "Please select a quality",
+			"default": "low",
+			"type": "pickString",
+			"options": ["lowest", "low", "medium", "high", "highest"]
+		},
+		{
+			"id": "debugPicker",
+			"description": "Please select a debug option",
+			"default": "",
+			"type": "pickString",
+			"options": ["", "--debug-normals", "--debug-heatmap"]
+		}
+	],
+}

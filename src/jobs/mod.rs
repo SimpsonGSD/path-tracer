@@ -15,11 +15,11 @@ pub struct Jobs {}
 
 #[allow(dead_code)]
 impl Jobs {
-    pub fn dispatch_job(job_task: Arc<RwLock<JobTask + Send + Sync + 'static>>) -> Arc<JobCounter>  {
+    pub fn dispatch_job(job_task: Arc<RwLock<dyn JobTask + Send + Sync + 'static>>) -> Arc<JobCounter>  {
         THREAD_POOL.push_job(job_task)
     }
 
-    pub fn dispatch_jobs(job_tasks: &Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>>) -> Arc<JobCounter> {
+    pub fn dispatch_jobs(job_tasks: &Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>>) -> Arc<JobCounter> {
         THREAD_POOL.push_job_array(&job_tasks)
     }
 
@@ -89,7 +89,7 @@ impl ThreadPool {
         }
     }
 
-    pub fn push_job(&self, job_task: Arc<RwLock<JobTask + Send + Sync + 'static>>) -> Arc<JobCounter> {
+    pub fn push_job(&self, job_task: Arc<RwLock<dyn JobTask + Send + Sync + 'static>>) -> Arc<JobCounter> {
         self.thread_wake_event.wake_threads(); // notify threads to wake
         let job_counter = Arc::new(JobCounter::new(1));
         let job_descriptor = JobDescriptor::new(job_task, job_counter.clone());
@@ -97,7 +97,7 @@ impl ThreadPool {
         job_counter
     }
 
-    pub fn push_job_array(&self, job_tasks: &Vec<Arc<RwLock<JobTask + Send + Sync + 'static>>>) -> Arc<JobCounter> {
+    pub fn push_job_array(&self, job_tasks: &Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>>) -> Arc<JobCounter> {
         self.thread_wake_event.wake_threads(); // notify threads to wake
         let job_counter = Arc::new(JobCounter::new(job_tasks.len()));
         for job in job_tasks {
@@ -123,12 +123,12 @@ impl Drop for ThreadPool {
 
 #[derive(Clone)]
 pub struct JobDescriptor{
-    job: Arc<RwLock<JobTask + Send + Sync + 'static>>,
+    job: Arc<RwLock<dyn JobTask + Send + Sync + 'static>>,
     job_counter: Arc<JobCounter>,
 }
 
 impl JobDescriptor {
-    pub fn new(job: Arc<RwLock<JobTask + Send + Sync + 'static>>, job_counter: Arc<JobCounter>) -> JobDescriptor {
+    pub fn new(job: Arc<RwLock<dyn JobTask + Send + Sync + 'static>>, job_counter: Arc<JobCounter>) -> JobDescriptor {
         JobDescriptor {
             job: job,
             job_counter,
