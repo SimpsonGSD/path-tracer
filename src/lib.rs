@@ -277,7 +277,8 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     //let world = two_spheres();
     //let world = four_spheres();
-    let world = random_scene(0.0, 1000.0);
+    //let world = random_scene(0.0, 1000.0);
+    let world = two_perlin_spheres();
 
     let lookfrom = Vec3::new(0.0,4.0,13.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
@@ -738,4 +739,12 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<dyn Hitable + Send + Sync + 'stat
     list.push(Arc::new(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0,Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)))));
 
     Box::new(BvhNode::from_list(list, t_min, t_max))
+}
+
+fn two_perlin_spheres() -> Box<dyn Hitable + Send + Sync + 'static> {
+    let perlin_texture = Arc::new(texture::NoiseTexture::new());
+    let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(perlin_texture.clone(), 0.0)))));
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, 2.0, 0.0), 2.0, Arc::new(Lambertian::new(perlin_texture.clone(), 0.0)))));
+    Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }
