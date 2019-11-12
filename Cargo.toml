@@ -26,4 +26,4 @@ failure = "0.1"
 [dependencies.rendy]
 optional = true
 version = "0.5.0"
-features = ["init-winit", "base", "texture-image", "shader-compiler"]
+features = ["init-winit", "base", "texture-image", "shader-compiler", "no-slow-safety-checks"]
