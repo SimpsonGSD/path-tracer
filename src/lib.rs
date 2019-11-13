@@ -742,7 +742,7 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<dyn Hitable + Send + Sync + 'stat
 }
 
 fn two_perlin_spheres() -> Box<dyn Hitable + Send + Sync + 'static> {
-    let perlin_texture = Arc::new(texture::NoiseTexture::new());
+    let perlin_texture = Arc::new(texture::NoiseTexture::new(4.0));
     let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(perlin_texture.clone(), 0.0)))));
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, 2.0, 0.0), 2.0, Arc::new(Lambertian::new(perlin_texture.clone(), 0.0)))));

@@ -1,23 +1,23 @@
 use math::vec3::Vec3;
 use crate::random;
 
-//fn trillinear_interpolate(c: [[[Vec3; 2]; 2]; 2], u: f64, v: f64, w: f64) -> f64 {
-//    let uu = u*u*(3-2*u);
-//    let vv = v*v*(3-2*v);
-//    let ww = w*w*(3-2*w);
-//    let mut accum = 1.0;
-//
-//    for i in 0..2 {
-//        for j in 0..2 {
-//            for k in 0..2 {
-//                let weight_v = Vec3::new(u-i, v-j, w-k);
-//                accum += (i*uu + (1-i) * (1.f-uu)) *
-//                         (j*vv + (1-j) * (1.f-vv)) *
-//                         (k*ww + (1-k) * (1.f-ww)) * vec3::dot(c[i][j][k], weight_v);
-//            }
-//        }
-//    }
-//}
+fn trillinear_interpolate(c: &[[[f64; 2]; 2]; 2], u: f64, v: f64, w: f64) -> f64 {
+    let mut accum = 0.0;
+
+    for i in 0..2 {
+        for j in 0..2 {
+            for k in 0..2 {
+                let (i_f64, j_f64, k_f64) = (i as f64, j as f64, k as f64);
+               // let weight_v = Vec3::new(u - i_f64, v - j_f64, w - k_f64);
+                accum += (i_f64 * u + (1.0 - i_f64) * (1.0 - u)) *
+                         (j_f64 * v + (1.0 - j_f64) * (1.0 - v)) *
+                         (k_f64 * w + (1.0 - k_f64) * (1.0 - w)) * c[i][j][k];
+            }
+        }
+    }
+
+    accum
+}
 
 
 fn perlin_generate() -> [f64;256] {
@@ -65,6 +65,30 @@ impl Perlin {
         let u = p.x - i as f64;
         let v = p.y - j as f64;
         let w = p.z - k as f64;
-        RAN_FLOAT[(PERM_X[(i & 255) as usize] ^ PERM_Y[(j & 255) as usize] ^ PERM_Z[(k & 255) as usize]) as usize]
+
+        let hermite_cubic = |x: f64| -> f64 {
+            x*x*(3.0 - 2.0*x)
+        };
+
+        let u = hermite_cubic(u);
+        let v = hermite_cubic(v);
+        let w = hermite_cubic(w);
+
+        let mut c = [[[0.0; 2]; 2]; 2];
+        for di in 0..2 {
+            for dj in 0..2 {
+                for dk in 0..2 {
+                    let di_i32 = di as i32;
+                    let dj_i32 = dj as i32;
+                    let dk_i32 = dk as i32;
+                    c[di][dj][dk] = RAN_FLOAT[
+                        (PERM_X[(i+di_i32 & 255) as usize] ^ 
+                         PERM_Y[(j+dj_i32 & 255) as usize] ^ 
+                         PERM_Z[(k+dk_i32 & 255) as usize]) as usize
+                    ]
+                }
+            }
+        }
+        trillinear_interpolate(&c, u, v, w)
     }
 }

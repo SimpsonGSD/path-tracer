@@ -53,16 +53,20 @@ impl Texture for CheckerTexture {
 }
 
 pub struct NoiseTexture {
+    pub scale: f64,
 }
 
 impl NoiseTexture {
-    pub fn new() -> Self {
-        Self{}
+    pub fn new(scale: f64) -> Self {
+        Self {
+            scale
+        }
     }
 }
 
 impl Texture for NoiseTexture {
     fn value(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
-        Vec3::from_float(1.0) * noise::Perlin::noise(point)
+        let scaled_point = self.scale * point;
+        Vec3::from_float(1.0) * noise::Perlin::noise(&scaled_point)
     }
 }
