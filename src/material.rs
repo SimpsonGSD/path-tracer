@@ -158,3 +158,25 @@ impl Material for Lambertian{
         if self.emissive > 0.0 {self.albedo.value(u, v, point) * self.emissive} else {Vec3::from_float(0.0)}
     }
 }
+
+pub struct DiffuseLight {
+    texture: Arc<dyn Texture + Send + Sync + 'static>
+}
+
+impl DiffuseLight {
+    pub fn new(texture: Arc<dyn Texture + Send + Sync + 'static>) -> Self {
+        Self {
+            texture
+        }
+    }
+}
+
+impl Material for DiffuseLight {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Ray, Vec3)> {
+        None
+    }
+
+    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
+        self.texture.value(u, v, point)
+    }
+}
