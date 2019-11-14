@@ -415,7 +415,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     } else  {
     
-        let controls_string = "Controls: O/P - Decrease/Increase Sky Brightness;  B - Toggle Emissive";
+        let controls_string = "Decrease/Increase Sky Brightness = O/P | Toggle Emissive = B | Decrease/Increase Exposure = R/T";
 
         let mut batches = vec![];
         let mut jobs: Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>>  = vec![];
@@ -472,6 +472,12 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 let mut scene_state_writable = scene_state.write();
                 scene_state_writable.disable_emissive = !scene_state_writable.disable_emissive;
                 clear_scene = true;
+            }
+
+            if user_input.keys_pressed.contains(&VirtualKeyCode::T) {
+                aux.tonemapper_args.clear_colour_and_exposure[3] += 0.1;
+            } else if user_input.keys_pressed.contains(&VirtualKeyCode::R) {
+                aux.tonemapper_args.clear_colour_and_exposure[3] -= 0.1;
             }
 
             // handle input for camera
@@ -531,8 +537,8 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
             scene_state_readable.window
                 .set_title(
-                    &format!("Path Tracer: FPS = {} (time={:.2}ms) |  Frame = {} | Sky Brightness = {}; Emissive = {} | {}", 
-                             fps as i32, frame_time*1000.0, frame_counter,scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, controls_string));
+                    &format!("Path Tracer: FPS = {} (time={:.2}ms) |  Frame = {} | Sky Brightness = {:.1} | Emissive = {} | Exposure = {:.1} | {}", 
+                             fps as i32, frame_time*1000.0, frame_counter,scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, aux.tonemapper_args.clear_colour_and_exposure[3], controls_string));
 
             if user_input.exit_requested {
                 // write image 

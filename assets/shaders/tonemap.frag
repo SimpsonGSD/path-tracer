@@ -21,4 +21,7 @@ void main() {
     float vignette = 1.0 - distance(uv, vec2(0.5, 0.5));
     tex_color *= vignette;
     color = vec4(tex_color, 1.0);
+    
+    //vec3 gamma = vec3(2.2, 2.2, 2.2);
+    //color = vec4(pow(tex_color, gamma), 1.0);
 }

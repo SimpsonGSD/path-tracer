@@ -177,9 +177,9 @@ impl TraceSceneBatchJob {
                 let weight = 1.0 / num_frames as f32;
                 let one_minus_weight: f32 = 1.0 - weight;
 
-                dest_buffer_row_slice[index]     = (pixel_colour.z as f32) * weight + dest_buffer_row_slice[index    ] * one_minus_weight;
+                dest_buffer_row_slice[index]     = (pixel_colour.x as f32) * weight + dest_buffer_row_slice[index    ] * one_minus_weight;
                 dest_buffer_row_slice[index + 1] = (pixel_colour.y as f32) * weight + dest_buffer_row_slice[index + 1] * one_minus_weight;
-                dest_buffer_row_slice[index + 2] = (pixel_colour.x as f32) * weight + dest_buffer_row_slice[index + 2] * one_minus_weight;
+                dest_buffer_row_slice[index + 2] = (pixel_colour.z as f32) * weight + dest_buffer_row_slice[index + 2] * one_minus_weight;
 
             }
         }
@@ -311,6 +311,7 @@ fn color(r : &Ray, world: &Box<dyn Hitable + Send + Sync + 'static>, depth: i32,
         let unit_dir = Vec3::new_unit_vector(&r.direction());
         let t = 0.5*(unit_dir.y + 1.0);
         let white = Vec3::from_float(1.0);
+        //let sky = Vec3::new(135.0/255.0, 206.0/255.0, 235.0/255.0);
         let sky = Vec3::new(0.5, 0.7, 1.0);
         return lerp(&white, &sky, t) * sky_brightness;
         //return Vec3::new(0.0, 0.0, 0.0);
