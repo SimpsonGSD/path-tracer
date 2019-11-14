@@ -457,44 +457,49 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
             let user_input = input::UserInput::poll_events_loop(&mut events_loop, &mut scene_state.write().window, &mut app_user_input_state);  
 
-            if user_input.keys_pressed.contains(&VirtualKeyCode::O) {
-                clear_scene = true;
-                let mut scene_state_writable = scene_state.write();
-                scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
-            }
-            
-            if user_input.keys_pressed.contains(&VirtualKeyCode::P) {
-                clear_scene = true;
-                let mut scene_state_writable = scene_state.write();
-                scene_state_writable.sky_brightness += 0.05;
-            }
-            
-            if user_input.keys_pressed.contains(&VirtualKeyCode::B) {
-                let mut scene_state_writable = scene_state.write();
-                scene_state_writable.disable_emissive = !scene_state_writable.disable_emissive;
-                clear_scene = true;
-            }
+            if app_user_input_state.grabbed {
+                if user_input.keys_pressed.contains(&VirtualKeyCode::O) {
+                    clear_scene = true;
+                    let mut scene_state_writable = scene_state.write();
+                    scene_state_writable.sky_brightness = (scene_state_writable.sky_brightness - 0.05).max(0.0);
+                }
+                
+                if user_input.keys_pressed.contains(&VirtualKeyCode::P) {
+                    clear_scene = true;
+                    let mut scene_state_writable = scene_state.write();
+                    scene_state_writable.sky_brightness += 0.05;
+                }
+                
+                if user_input.keys_pressed.contains(&VirtualKeyCode::B) {
+                    let mut scene_state_writable = scene_state.write();
+                    scene_state_writable.disable_emissive = !scene_state_writable.disable_emissive;
+                    clear_scene = true;
+                }
 
-            if user_input.keys_pressed.contains(&VirtualKeyCode::T) {
-                aux.tonemapper_args.clear_colour_and_exposure[3] += 0.1;
-            } else if user_input.keys_pressed.contains(&VirtualKeyCode::R) {
-                aux.tonemapper_args.clear_colour_and_exposure[3] -= 0.1;
-            }
+                if user_input.keys_pressed.contains(&VirtualKeyCode::T) {
+                    aux.tonemapper_args.clear_colour_and_exposure[3] += 0.1;
+                } else if user_input.keys_pressed.contains(&VirtualKeyCode::R) {
+                    aux.tonemapper_args.clear_colour_and_exposure[3] -= 0.1;
+                }
 
-            // handle input for camera
-            {
-                let mut scene_state_writable = scene_state.write();
-                let cam = &mut scene_state_writable.cam;
-                let camera_moved = cam.update_from_input(&user_input, frame_time);
+                // handle input for camera
+                {
+                        
+                    let mut scene_state_writable = scene_state.write();
+                    let cam = &mut scene_state_writable.cam;
+                    let camera_moved = cam.update_from_input(&user_input, frame_time);
 
-                if camera_moved || clear_scene {
-                    cam.update();
-                    batches.iter().for_each(|batch| batch.write().clear_buffer());
-                    let buffer = scene_output.buffer.write();
-                    *buffer = vec![0.0_f32; buffer_size_elements];
+                    if camera_moved || clear_scene {
+                        cam.update();
+                        batches.iter().for_each(|batch| batch.write().clear_buffer());
+                        let buffer = scene_output.buffer.write();
+                        *buffer = vec![0.0_f32; buffer_size_elements];
 
+                    }
                 }
             }
+
+            
 
             let job_counter = Jobs::dispatch_jobs(&jobs);
             Jobs::wait_for_counter(&job_counter, 0);
