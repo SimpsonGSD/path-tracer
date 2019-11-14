@@ -278,7 +278,8 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     //let world = two_spheres();
     //let world = four_spheres();
     //let world = random_scene(0.0, 1000.0);
-    let world = two_perlin_spheres();
+    //let world = two_perlin_spheres();
+    let world = textured_sphere();
 
     let lookfrom = Vec3::new(0.0,4.0,13.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
@@ -747,10 +748,19 @@ fn random_scene(t_min: f64, t_max: f64) -> Box<dyn Hitable + Send + Sync + 'stat
     Box::new(BvhNode::from_list(list, t_min, t_max))
 }
 
+pub static EARTH_TEXTURE_BYTES: &[u8] = include_bytes!("../assets/textures/earthmap.jpg");
+
 fn two_perlin_spheres() -> Box<dyn Hitable + Send + Sync + 'static> {
     let perlin_texture = Arc::new(texture::NoiseTexture::new(4.0));
     let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(perlin_texture.clone(), 0.0)))));
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, 2.0, 0.0), 2.0, Arc::new(Lambertian::new(perlin_texture.clone(), 0.0)))));
+    Box::new(BvhNode::from_list(list, 0.0, 1.0))
+}
+
+fn textured_sphere() -> Box<dyn Hitable + Send + Sync + 'static> {
+    let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, 2.0, 0.0), 2.0, Arc::new(Lambertian::new(Arc::new(texture::ImageTexture::new(EARTH_TEXTURE_BYTES)), 0.0)))));
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::from_float(0.4))), 0.0)))));
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }
