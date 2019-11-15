@@ -300,13 +300,13 @@ impl JobTask for TraceSceneBatchJob {
 
 fn color(r : &Ray, world: &Box<dyn Hitable + Send + Sync + 'static>, depth: i32, t_min: f64, t_max: f64, sky_brightness: f64, disable_emissive: bool) -> Vec3 {
     if let Some(hit_record) = world.hit(r, 0.001, f64::MAX) {
+        let mut colour = if !disable_emissive {hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p)} else {Vec3::from_float(0.0)};
         if depth < 100 {
-            let emitted = if !disable_emissive {hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p)} else {Vec3::from_float(0.0)};
             if  let Some((scattered, attenuation)) =  hit_record.mat.scatter(r, &hit_record) {
-                return emitted + attenuation * color(&scattered, world, depth+1, 0.001, f64::MAX, sky_brightness, disable_emissive);
+                colour += attenuation * color(&scattered, world, depth+1, 0.001, f64::MAX, sky_brightness, disable_emissive);
             }
         }
-        return Vec3::new_zero_vector();
+        return colour;
     } else {
         let unit_dir = Vec3::new_unit_vector(&r.direction());
         let t = 0.5*(unit_dir.y + 1.0);

@@ -64,6 +64,7 @@ mod winit_utils;
 mod jobs;
 mod node;
 mod input;
+mod rect;
 
 use math::*;
 use hitable::*;
@@ -279,14 +280,15 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     //let world = four_spheres();
     //let world = random_scene(0.0, 1000.0);
     //let world = two_perlin_spheres();
-    let world = textured_sphere();
+    //let world = textured_sphere();
+    let world = simple_light();
 
-    let lookfrom = Vec3::new(0.0,4.0,13.0);
+    let lookfrom = Vec3::new(26.0,2.0,3.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
-    let lookat = Vec3::new(0.0,0.0,-1.0);
-    let dist_to_focus = 11.0;
-    let aperture = 0.001;
+    let lookat = Vec3::new(0.0,0.0,0.0);
+    let dist_to_focus = 10.0;
+    let aperture = 0.0;
     let aspect: f64 = (nx as f64)/(ny as f64);
 
    // let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
@@ -320,7 +322,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks));
 
-    let default_disable_emissive = config.realtime; // Disable emissive for realtime by default as it's noisy
+    let default_disable_emissive = false;//config.realtime; // Disable emissive for realtime by default as it's noisy
     let default_sky_brightness = if default_disable_emissive {1.0} else {0.6};
     let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window, 0.0, 1.0/60.0, default_sky_brightness, default_disable_emissive, config)));
     let scene_output = Arc::new(SceneOutput::new(rgba_texture, remaining_tasks, window_lock));
@@ -499,8 +501,6 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 }
             }
 
-            
-
             let job_counter = Jobs::dispatch_jobs(&jobs);
             Jobs::wait_for_counter(&job_counter, 0);
 
@@ -543,7 +543,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
             scene_state_readable.window
                 .set_title(
-                    &format!("Path Tracer: FPS = {} (time={:.2}ms) |  Frame = {} | Sky Brightness = {:.1} | Emissive = {} | Exposure = {:.1} | {}", 
+                    &format!("Path Tracer: FPS = {} (time={:.2}ms) |  Frame = {} | Sky Brightness = {:.2} | Emissive = {} | Exposure = {:.1} | {}", 
                              fps as i32, frame_time*1000.0, frame_counter,scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, aux.tonemapper_args.clear_colour_and_exposure[3], controls_string));
 
             if user_input.exit_requested {
@@ -767,5 +767,18 @@ fn textured_sphere() -> Box<dyn Hitable + Send + Sync + 'static> {
     let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, 2.0, 0.0), 2.0, Arc::new(Lambertian::new(Arc::new(texture::ImageTexture::new(EARTH_TEXTURE_BYTES)), 0.0)))));
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::from_float(0.4))), 0.0)))));
+    Box::new(BvhNode::from_list(list, 0.0, 1.0))
+}
+
+fn simple_light() -> Box<dyn Hitable + Send + Sync + 'static> {
+    let perlin_texture = Arc::new(texture::NoiseTexture::new(4.0));
+    let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, -1000.0, 0.0), 1000.0, Arc::new(Lambertian::new(perlin_texture.clone(), 0.0)))));
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, 2.0, 0.0), 2.0, Arc::new(Lambertian::new(perlin_texture.clone(), 0.0)))));
+
+    let diffuse_material = Arc::new(material::DiffuseLight::new(Arc::new(ConstantTexture::new(Vec3::from_float(0.4)))));
+
+    list.push(Arc::new(Sphere::new(Vec3::new(0.0, 7.0, 0.0), 2.0, diffuse_material.clone())));
+    list.push(Arc::new(rect::RectXY::new(3.0, 5.0, 1.0, 3.0, -2.0, diffuse_material.clone())));
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }

@@ -113,7 +113,7 @@ impl Camera {
         use rendy::init::winit::event::*;
 
         const CAM_SPEED: f64 = 4.0;
-        const MOUSE_LOOK_SPEED: f64 = 0.4;
+        const MOUSE_LOOK_SPEED: f64 = 1.0;
 
         let mut camera_moved = false;
 
