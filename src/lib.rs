@@ -69,8 +69,9 @@ mod rect;
 use math::*;
 use hitable::*;
 use camera::Camera;
-use texture::{ConstantTexture, CheckerTexture};
+use texture::*;
 use material::*;
+use rect::*;
 use sphere::{Sphere, MovingSphere};
 use bvh::BvhNode;
 use trace::*;
@@ -281,18 +282,23 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     //let world = random_scene(0.0, 1000.0);
     //let world = two_perlin_spheres();
     //let world = textured_sphere();
-    let world = simple_light();
+    //let world = simple_light();
+    let world = cornell_box();
 
-    let lookfrom = Vec3::new(26.0,2.0,3.0);
-    //let lookat = Vec3::new(0.0,0.0,0.0);
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
-    let lookat = Vec3::new(0.0,0.0,0.0);
+    //let lookfrom = Vec3::new(26.0,2.0,3.0);
+    let lookfrom = Vec3::new(278.0,278.0,-800.0);
+    //let lookat = Vec3::new(0.0,0.0,0.0);
+    //let lookat = Vec3::new(0.0,0.0,0.0);
+    let lookat = Vec3::new(278.0,278.0,0.0);
     let dist_to_focus = 10.0;
     let aperture = 0.0;
     let aspect: f64 = (nx as f64)/(ny as f64);
+    //let fov = 20.0;
+    let fov = 40.0;
 
    // let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
-    let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0);
+    let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), fov, aspect, aperture, dist_to_focus, 0.0, 1.0);
 
     let convert_to_rgb_u8_and_gamma_correct = |buffer: &Vec<f32>| -> Vec<u8>{
         let mut output = Vec::with_capacity(buffer.len());
@@ -779,6 +785,23 @@ fn simple_light() -> Box<dyn Hitable + Send + Sync + 'static> {
     let diffuse_material = Arc::new(material::DiffuseLight::new(Arc::new(ConstantTexture::new(Vec3::from_float(0.4)))));
 
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, 7.0, 0.0), 2.0, diffuse_material.clone())));
-    list.push(Arc::new(rect::AxisAlignedRect::new(&Vec3::new(3.0, 1.0, -2.0), &Vec3::new(5.0, 3.0, -2.0), rect::AxisAlignedRectAxis::Z, diffuse_material.clone())));
+    list.push(Arc::new(rect::AxisAlignedRect::new(Vec3::new(3.0, 1.0, -2.0), Vec3::new(5.0, 3.0, -2.0), rect::AxisAlignedRectAxis::Z, diffuse_material.clone())));
+    Box::new(BvhNode::from_list(list, 0.0, 1.0))
+}
+
+fn cornell_box() -> Box<dyn Hitable + Send + Sync + 'static> {
+    let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
+
+    let red_mat = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.65, 0.05, 0.05))), 0.0));
+    let white_mat = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.73, 0.73, 0.73))), 0.0));
+    let green_mat = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.12, 0.45, 0.15))), 0.0));
+    let light = Arc::new(DiffuseLight::new(Arc::new(ConstantTexture::new(Vec3::new(15.0, 15.0, 15.0)))));
+
+    list.push(Arc::new(AxisAlignedRect::new(Vec3::new(555.0, 0.0, 0.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::X, green_mat)));
+    list.push(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 555.0, 555.0), AxisAlignedRectAxis::X, red_mat)));
+    list.push(Arc::new(AxisAlignedRect::new(Vec3::new(213.0, 554.0, 227.0), Vec3::new(343.0, 554.0, 332.0), AxisAlignedRectAxis::Y, light)));
+    list.push(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(555.0, 0.0, 555.0), AxisAlignedRectAxis::Y, white_mat.clone())));
+    list.push(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 555.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::Z, white_mat)));
+
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }

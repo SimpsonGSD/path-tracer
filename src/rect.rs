@@ -26,8 +26,8 @@ const FLT_TOLERANCE: f64 = 0.0000001;
 
 impl AxisAlignedRect {
     pub fn new(
-        min: &Vec3,
-        max: &Vec3, 
+        min: Vec3,
+        max: Vec3, 
         plane_axis: AxisAlignedRectAxis,
         material: Arc<dyn Material + Send + Sync + 'static>) 
     -> Self {
