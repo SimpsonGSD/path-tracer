@@ -779,6 +779,6 @@ fn simple_light() -> Box<dyn Hitable + Send + Sync + 'static> {
     let diffuse_material = Arc::new(material::DiffuseLight::new(Arc::new(ConstantTexture::new(Vec3::from_float(0.4)))));
 
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, 7.0, 0.0), 2.0, diffuse_material.clone())));
-    list.push(Arc::new(rect::RectXY::new(3.0, 5.0, 1.0, 3.0, -2.0, diffuse_material.clone())));
+    list.push(Arc::new(rect::AxisAlignedRect::new(&Vec3::new(3.0, 1.0, -2.0), &Vec3::new(5.0, 3.0, -2.0), rect::AxisAlignedRectAxis::Z, diffuse_material.clone())));
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }
