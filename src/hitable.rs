@@ -56,3 +56,30 @@ impl Hitable for HitableList {
         unreachable!(); 
     }
 }
+
+pub struct FlipNormals {
+    child: Arc<dyn Hitable + Send + Sync + 'static>
+}
+
+impl FlipNormals {
+    pub fn new(child: Arc<dyn Hitable + Send + Sync + 'static>) -> Self {
+        Self {
+            child
+        }
+    }
+}
+
+impl Hitable for FlipNormals {
+    fn hit(&self, r: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
+        if let Some(mut hit_record) = self.child.hit(r, t_min, t_max) {
+            hit_record.normal = -hit_record.normal;
+            return Some(hit_record);
+        }
+
+        None
+    }
+
+    fn bounding_box(&self, t0: f64, t1: f64) -> AABB {
+        self.child.bounding_box(t0, t1)
+    }
+}

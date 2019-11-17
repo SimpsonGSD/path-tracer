@@ -818,11 +818,12 @@ fn cornell_box() -> Box<dyn Hitable + Send + Sync + 'static> {
         )
         .diffuse_light();
 
-    list.push(Arc::new(AxisAlignedRect::new(Vec3::new(555.0, 0.0, 0.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::X, green_mat)));
+    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(Vec3::new(555.0, 0.0, 0.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::X, green_mat)))));
     list.push(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 555.0, 555.0), AxisAlignedRectAxis::X, red_mat)));
     list.push(Arc::new(AxisAlignedRect::new(Vec3::new(213.0, 554.0, 227.0), Vec3::new(343.0, 554.0, 332.0), AxisAlignedRectAxis::Y, light)));
+    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 555.0, 0.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::Y, white_mat.clone())))));
     list.push(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(555.0, 0.0, 555.0), AxisAlignedRectAxis::Y, white_mat.clone())));
-    list.push(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 555.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::Z, white_mat)));
+    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 555.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::Z, white_mat)))));
 
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }
