@@ -1,6 +1,6 @@
 use math::*;
 use hitable::HitRecord;
-use texture::Texture;
+use texture::{Texture, ConstantTexture};
 use std::sync::Arc;
 
 fn random_in_unit_sphere() -> Vec3 {
@@ -36,6 +36,67 @@ fn schlick(cosine: f64, ref_idx: f64) -> f64 {
     r0 = r0*r0;
     r0 + (1.0-r0)*(1.0-cosine).powf(5.0)
 }
+
+pub struct MaterialBuilder {
+    texture: Arc<dyn Texture + Send + Sync + 'static>,
+    albedo: Vec3,
+    emissive: f64,
+    fuzz: f64,
+    refraction_index: f64
+}
+
+impl MaterialBuilder {
+    pub fn new() -> Self {
+        Self {
+            texture: Arc::new(ConstantTexture::new(Vec3::from_float(0.0))),
+            emissive: 0.0,
+            albedo: Vec3::from_float(0.0),
+            fuzz: 0.0,
+            refraction_index: 1.0,
+        }
+    }
+
+    pub fn with_texture<'a>(&'a mut self, texture: Arc<dyn Texture + Send + Sync + 'static>) -> &'a mut MaterialBuilder {
+        self.texture = texture;
+        self
+    }
+
+    pub fn set_emissive<'a>(&'a mut self, emissive: f64) -> &'a mut MaterialBuilder {
+        self.emissive = emissive;
+        self
+    }
+
+    pub fn set_albedo<'a>(&'a mut self, albedo: Vec3) -> &'a mut MaterialBuilder {
+        self.albedo = albedo;
+        self
+    }
+
+    pub fn set_fuzz<'a>(&'a mut self, fuzz: f64) -> &'a mut MaterialBuilder {
+        self.fuzz = fuzz;
+        self
+    }
+
+    pub fn set_refraction_index<'a>(&'a mut self, refraction_index: f64) -> &'a mut MaterialBuilder {
+        self.refraction_index = refraction_index;
+        self
+    }
+
+    pub fn lambertian(&self) -> Arc<dyn Material + Send + Sync + 'static> {
+        Arc::new(Lambertian::new(self.texture.clone(), self.emissive))
+    }
+
+    pub fn diffuse_light(&self) -> Arc<dyn Material + Send + Sync + 'static> {
+        Arc::new(DiffuseLight::new(self.texture.clone()))
+    }
+
+    pub fn metal(&self) -> Arc<dyn Material + Send + Sync + 'static> {
+        Arc::new(Metal::new(self.albedo, self.fuzz))
+    }
+
+    pub fn dielectric(&self) -> Arc<dyn Material + Send + Sync + 'static> {
+        Arc::new(Dielectric::new(self.refraction_index))
+    }
+}  
 
 pub trait Material {
     // TODO(SS): return struct ray and attenuation so it's more obvious what these are

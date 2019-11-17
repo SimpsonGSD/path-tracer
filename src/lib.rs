@@ -792,10 +792,31 @@ fn simple_light() -> Box<dyn Hitable + Send + Sync + 'static> {
 fn cornell_box() -> Box<dyn Hitable + Send + Sync + 'static> {
     let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
 
-    let red_mat = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.65, 0.05, 0.05))), 0.0));
-    let white_mat = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.73, 0.73, 0.73))), 0.0));
-    let green_mat = Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.12, 0.45, 0.15))), 0.0));
-    let light = Arc::new(DiffuseLight::new(Arc::new(ConstantTexture::new(Vec3::new(15.0, 15.0, 15.0)))));
+    let mut material_builder = MaterialBuilder::new();
+
+    let red_mat = material_builder
+        .with_texture(
+            Arc::new(ConstantTexture::new(Vec3::new(0.65, 0.05, 0.05)))
+        )
+        .lambertian();
+
+    let green_mat = material_builder
+        .with_texture(
+            Arc::new(ConstantTexture::new(Vec3::new(0.12, 0.45, 0.15)))
+        )
+        .lambertian();
+
+    let white_mat = material_builder
+        .with_texture(
+            Arc::new(ConstantTexture::new(Vec3::from_float(0.73)))
+        )
+        .lambertian();
+
+    let light = material_builder
+        .with_texture(
+            Arc::new(ConstantTexture::new(Vec3::from_float(15.0)))
+        )
+        .diffuse_light();
 
     list.push(Arc::new(AxisAlignedRect::new(Vec3::new(555.0, 0.0, 0.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::X, green_mat)));
     list.push(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 555.0, 555.0), AxisAlignedRectAxis::X, red_mat)));
