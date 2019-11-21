@@ -42,13 +42,7 @@ lazy_static::lazy_static! {
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct TonemapperArgs {
-    pub clear_colour_and_exposure: [f32; 4],
-}
-
-impl std::fmt::Display for TonemapperArgs {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Clear Colour{}, Exposure: {}", self.clear_colour_and_exposure[0], self.clear_colour_and_exposure[3])
-    }
+    pub exposure_numframes_xx: [f32; 4],
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -261,7 +261,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         frames: FRAMES_IN_FLIGHT as usize,
         hw_alignment,
         tonemapper_args: node::tonemap::TonemapperArgs {
-            clear_colour_and_exposure: [0.0, 1.0, 0.0, 1.0],
+            exposure_numframes_xx: [1.0, 1.0, 0.0, 0.0],
         },
         source_buffer: Some(source_buffer)
     };
@@ -463,6 +463,8 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 scene_state_writable.time1 += frame_time;
             }
 
+            aux.tonemapper_args.exposure_numframes_xx[1] += 1.0;
+
             let user_input = input::UserInput::poll_events_loop(&mut events_loop, &mut scene_state.write().window, &mut app_user_input_state);  
 
             if app_user_input_state.grabbed {
@@ -485,9 +487,9 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                 }
 
                 if user_input.keys_pressed.contains(&VirtualKeyCode::T) {
-                    aux.tonemapper_args.clear_colour_and_exposure[3] += 0.1;
+                    aux.tonemapper_args.exposure_numframes_xx[0] += 0.1;
                 } else if user_input.keys_pressed.contains(&VirtualKeyCode::R) {
-                    aux.tonemapper_args.clear_colour_and_exposure[3] -= 0.1;
+                    aux.tonemapper_args.exposure_numframes_xx[0] -= 0.1;
                 }
 
                 // handle input for camera
@@ -502,6 +504,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                         batches.iter().for_each(|batch| batch.write().clear_buffer());
                         let buffer = scene_output.buffer.write();
                         *buffer = vec![0.0_f32; buffer_size_elements];
+                        aux.tonemapper_args.exposure_numframes_xx[1] = 1.0;
 
                     }
                 }
@@ -550,7 +553,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
             scene_state_readable.window
                 .set_title(
                     &format!("Path Tracer: FPS = {} (time={:.2}ms) |  Frame = {} | Sky Brightness = {:.2} | Emissive = {} | Exposure = {:.1} | {}", 
-                             fps as i32, frame_time*1000.0, frame_counter,scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, aux.tonemapper_args.clear_colour_and_exposure[3], controls_string));
+                             fps as i32, frame_time*1000.0, frame_counter,scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, aux.tonemapper_args.exposure_numframes_xx[0], controls_string));
 
             if user_input.exit_requested {
                 // write image 
