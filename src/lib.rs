@@ -66,6 +66,7 @@ mod node;
 mod input;
 mod rect;
 mod axis_aligned_box;
+mod scene;
 
 use math::*;
 use hitable::*;
@@ -823,13 +824,43 @@ fn cornell_box() -> Box<dyn Hitable + Send + Sync + 'static> {
         )
         .diffuse_light();
 
-    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::X, green_mat)))));
-    list.push(Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 0.0, AxisAlignedRectAxis::X, red_mat)));
-    list.push(Arc::new(AxisAlignedRect::new(213.0, 343.0, 227.0, 332.0, 554.0, AxisAlignedRectAxis::Y, light)));
-    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::Y, white_mat.clone())))));
-    list.push(Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 0.0, AxisAlignedRectAxis::Y, white_mat.clone())));
-    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::Z, white_mat.clone())))));
-    list.push(Arc::new(AxisAlignedBox::new(Vec3::new(130.0, 0.0, 65.0), Vec3::new(295.0, 165.0, 230.0), white_mat.clone())));
-    list.push(Arc::new(AxisAlignedBox::new(Vec3::new(265.0, 0.0, 295.0), Vec3::new(430.0, 330.0, 460.0), white_mat.clone())));
-    Box::new(BvhNode::from_list(list, 0.0, 1.0))
+    let mut scene_builder = scene::SceneBuilder::new();
+    
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::X, green_mat))
+        )
+        .flip_normals();
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 0.0, AxisAlignedRectAxis::X, red_mat))
+        );
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(213.0, 343.0, 227.0, 332.0, 554.0, AxisAlignedRectAxis::Y, light))
+        );
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::Y, white_mat.clone()))
+        )
+        .flip_normals();
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 0.0, AxisAlignedRectAxis::Y, white_mat.clone()))
+        );
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::Z, white_mat.clone()))
+        )
+        .flip_normals();
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedBox::new(Vec3::new(130.0, 0.0, 65.0), Vec3::new(295.0, 165.0, 230.0), white_mat.clone()))
+        );
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedBox::new(Vec3::new(265.0, 0.0, 295.0), Vec3::new(430.0, 330.0, 460.0), white_mat.clone()))
+        );
+
+    scene_builder.as_bvh()
 }
