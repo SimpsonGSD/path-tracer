@@ -65,6 +65,7 @@ mod jobs;
 mod node;
 mod input;
 mod rect;
+mod axis_aligned_box;
 
 use math::*;
 use hitable::*;
@@ -72,6 +73,7 @@ use camera::Camera;
 use texture::*;
 use material::*;
 use rect::*;
+use axis_aligned_box::*;
 use sphere::{Sphere, MovingSphere};
 use bvh::BvhNode;
 use trace::*;
@@ -788,7 +790,7 @@ fn simple_light() -> Box<dyn Hitable + Send + Sync + 'static> {
     let diffuse_material = Arc::new(material::DiffuseLight::new(Arc::new(ConstantTexture::new(Vec3::from_float(0.4)))));
 
     list.push(Arc::new(Sphere::new(Vec3::new(0.0, 7.0, 0.0), 2.0, diffuse_material.clone())));
-    list.push(Arc::new(rect::AxisAlignedRect::new(Vec3::new(3.0, 1.0, -2.0), Vec3::new(5.0, 3.0, -2.0), rect::AxisAlignedRectAxis::Z, diffuse_material.clone())));
+    list.push(Arc::new(rect::AxisAlignedRect::new(3.0, 5.0, 1.0, 3.0, -2.0, rect::AxisAlignedRectAxis::Z, diffuse_material.clone())));
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }
 
@@ -821,12 +823,13 @@ fn cornell_box() -> Box<dyn Hitable + Send + Sync + 'static> {
         )
         .diffuse_light();
 
-    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(Vec3::new(555.0, 0.0, 0.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::X, green_mat)))));
-    list.push(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 555.0, 555.0), AxisAlignedRectAxis::X, red_mat)));
-    list.push(Arc::new(AxisAlignedRect::new(Vec3::new(213.0, 554.0, 227.0), Vec3::new(343.0, 554.0, 332.0), AxisAlignedRectAxis::Y, light)));
-    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 555.0, 0.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::Y, white_mat.clone())))));
-    list.push(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(555.0, 0.0, 555.0), AxisAlignedRectAxis::Y, white_mat.clone())));
-    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(Vec3::new(0.0, 0.0, 555.0), Vec3::new(555.0, 555.0, 555.0), AxisAlignedRectAxis::Z, white_mat)))));
-
+    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::X, green_mat)))));
+    list.push(Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 0.0, AxisAlignedRectAxis::X, red_mat)));
+    list.push(Arc::new(AxisAlignedRect::new(213.0, 343.0, 227.0, 332.0, 554.0, AxisAlignedRectAxis::Y, light)));
+    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::Y, white_mat.clone())))));
+    list.push(Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 0.0, AxisAlignedRectAxis::Y, white_mat.clone())));
+    list.push(Arc::new(FlipNormals::new(Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::Z, white_mat.clone())))));
+    list.push(Arc::new(AxisAlignedBox::new(Vec3::new(130.0, 0.0, 65.0), Vec3::new(295.0, 165.0, 230.0), white_mat.clone())));
+    list.push(Arc::new(AxisAlignedBox::new(Vec3::new(265.0, 0.0, 295.0), Vec3::new(430.0, 330.0, 460.0), white_mat.clone())));
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }
