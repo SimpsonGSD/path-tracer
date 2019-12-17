@@ -1,6 +1,7 @@
 use crate::hitable::*;
 use std::sync::Arc;
 use crate::bvh::BvhNode;
+use crate::math::vec3::*;
 
 pub struct SceneBuilder {
     scene: Vec<Arc<dyn Hitable + Send + Sync + 'static>>,
@@ -33,4 +34,13 @@ impl SceneBuilder {
         }
         self
     }
+
+    pub fn translate(&mut self, translation: Vec3) -> &mut Self {
+        let last_hitable = self.scene.pop();
+        if let Some(hitable) = last_hitable {
+            self.scene.push(Arc::new(Translate::new(translation, hitable)));
+        }
+        self
+    }
 }
+

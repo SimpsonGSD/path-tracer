@@ -28,15 +28,15 @@ impl Camera {
         let theta = vfov * PI / 180.0;
         let half_height = (theta/2.0).tan();
         let half_width = aspect * half_height;
-        let w = Vec3::new_unit_vector(&(&origin - &look_at)); // TODO(SS): This produces negative forward vector..
+        let w = Vec3::new_unit_vector(&(origin - look_at)); // TODO(SS): This produces negative forward vector..
         let u = Vec3::new_unit_vector(&vec3::cross(&vup, &w));
         let v = vec3::cross(&w,&u);
         Camera {
             origin: origin.clone(),
             look_at: look_at.clone(),
-            lower_left_corner: &origin - &(&u*half_width*focus_dist) - &(&v*half_height*focus_dist) - &(&w*focus_dist),
-            horizontal: &u*2.0*half_width*focus_dist,
-            vertical: &v*2.0*half_height*focus_dist,
+            lower_left_corner: origin - (u*half_width*focus_dist) - (v*half_height*focus_dist) - (w*focus_dist),
+            horizontal: u*2.0*half_width*focus_dist,
+            vertical: v*2.0*half_height*focus_dist,
             u,
             v,
             w,
@@ -58,7 +58,7 @@ impl Camera {
     }
 
     pub fn get_forward(&self) -> Vec3 {
-        -self.w.clone()
+        self.w.clone()
     }
 
     pub fn get_up(&self) -> Vec3 {

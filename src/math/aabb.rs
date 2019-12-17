@@ -54,6 +54,11 @@ impl AABB {
                                 ffmax(box0.max().y, box1.max().y),
                                 ffmax(box0.max().z, box1.max().z)))             
     }
+
+    pub fn add_translation(&mut self, translation: Vec3) {
+        self.max += translation;
+        self.min += translation;
+    }
 }
 
 
