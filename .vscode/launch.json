@@ -3,7 +3,36 @@
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
-    "configurations": [
+    "configurations": [        
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Cargo launch debug mac",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--features",
+                    "metal"
+                ]
+            },
+            "program": "${cargo:program}",
+            "args": []
+        },
+        {
+            "name": "(lldb) Launch",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/path_tracer",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [{"name":"RUST_BACKTRACE", "value":"1"}],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Rust: cargo build mac [debug]",
+            "sourceLanguages": ["rust"],
+            "requireExactSource":false,
+        },
         {
             "name": "(Windows) Launch",
             "type": "cppvsdbg",
@@ -19,14 +48,13 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "enter program name, for example ${workspaceFolder}/a.exe",
+            "program": "${workspaceFolder}/target/release/path_tracer",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": true,
             "MIMode": "gdb",
-            "miDebuggerPath": "/path/to/gdb",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",

@@ -73,6 +73,15 @@ pub fn update_window_framebuffer(window: &winit::window::Window,
 }
 
 #[allow(dead_code)]
+#[cfg(not(target_os = "windows"))]
+pub fn update_window_framebuffer_rect(window: &winit::window::Window, 
+                                  buffer: &mut Vec<u8>, 
+                                  window_pos: (u32, u32), 
+                                  buffer_size: (u32, u32)) {
+}
+
+#[allow(dead_code)]
+#[cfg(target_os = "windows")]
 pub fn update_window_framebuffer_rect(window: &winit::window::Window, 
                                   buffer: &mut Vec<u8>, 
                                   window_pos: (u32, u32), 

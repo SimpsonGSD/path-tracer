@@ -13,6 +13,9 @@ empty = ["rendy/empty"]
 [profile.dev]
 opt-level = 1
 
+[profile.release]
+debug = true
+
 [dependencies]
 rand = "0.6.1"
 winapi = "0.3.6"

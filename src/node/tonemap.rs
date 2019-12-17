@@ -20,14 +20,14 @@ use crate::Aux;
 
 lazy_static::lazy_static! {
     static ref VERTEX: PathBufShaderInfo = PathBufShaderInfo::new(
-        std::path::PathBuf::from(crate::application_root_dir()).join("assets/shaders/fullscreen_triangle.vert"),
+        std::path::PathBuf::from("assets/shaders/fullscreen_triangle.vert"),
         ShaderKind::Vertex,
         SourceLanguage::GLSL,
         "main",
     );
 
     static ref FRAGMENT: PathBufShaderInfo = PathBufShaderInfo::new(
-        std::path::PathBuf::from(crate::application_root_dir()).join("assets/shaders/tonemap.frag"),
+        std::path::PathBuf::from("assets/shaders/tonemap.frag"),
         ShaderKind::Fragment,
         SourceLanguage::GLSL,
         "main",
@@ -110,7 +110,48 @@ where
         factory: &mut Factory<B>,
         _aux: &Aux<B>,
     ) -> rendy::shader::ShaderSet<B> {
-        SHADERS.build(factory, Default::default()).unwrap()
+        return SHADERS.build(factory, Default::default()).unwrap();
+
+        let vertex: PathBufShaderInfo = PathBufShaderInfo::new(
+            std::path::PathBuf::from("assets/shaders/fullscreen_triangle.vert"),
+            ShaderKind::Vertex,
+            SourceLanguage::GLSL,
+            "main",
+        );
+
+        let fragment: PathBufShaderInfo = PathBufShaderInfo::new(
+            std::path::PathBuf::from("assets/shaders/tonemap.frag"),
+            ShaderKind::Fragment,
+            SourceLanguage::GLSL,
+            "main",
+        );
+    
+        let mut shaders: rendy::shader::ShaderSetBuilder = rendy::shader::ShaderSetBuilder::default();
+
+        shaders = match shaders.with_vertex(&vertex) {
+            Err(e) => {
+                println!("{}", e);
+                panic!();
+            }
+            Ok(shaders) => {shaders}
+        };
+
+        shaders = match shaders.with_vertex(&fragment) {
+            Err(e) => {
+                println!("{}", e);
+                panic!();
+            }
+            Ok(shaders) => {shaders}
+        };
+
+        match shaders.build(factory, Default::default()) {
+            Err(e) => {
+                println!("{}", e);
+                panic!();
+            }
+            Ok(shaders_set) => shaders_set
+        }
+
     }
 
     fn layout(&self) -> Layout {
