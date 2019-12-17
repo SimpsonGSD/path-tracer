@@ -796,7 +796,6 @@ fn simple_light() -> Box<dyn Hitable + Send + Sync + 'static> {
 }
 
 fn cornell_box() -> Box<dyn Hitable + Send + Sync + 'static> {
-    let mut list: Vec<Arc<dyn Hitable + Send + Sync + 'static>> = vec![];
 
     let mut material_builder = MaterialBuilder::new();
 

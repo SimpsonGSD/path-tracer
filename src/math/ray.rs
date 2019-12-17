@@ -1,9 +1,9 @@
 use math::vec3::Vec3;
 
 pub struct Ray {
-    origin: Vec3,
-    direction: Vec3,
-    time: f64
+    pub origin: Vec3,
+    pub direction: Vec3,
+    pub time: f64
 }
 
 impl Ray {

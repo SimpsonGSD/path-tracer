@@ -83,3 +83,36 @@ impl Hitable for FlipNormals {
         self.child.bounding_box(t0, t1)
     }
 }
+
+pub struct Translate {
+    translation: Vec3,
+    hittable: Arc<dyn Hitable + Send + Sync>,
+}
+
+impl Translate {
+    pub fn new(translation: Vec3, hittable: Arc<dyn Hitable + Send + Sync>) -> Self {
+        Self {
+            translation,
+            hittable,
+        }
+    }
+}
+
+impl Hitable for Translate {
+    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
+        // translate incoming ray by the inverse of our translation node
+        let translated_ray = Ray::new(ray.origin - self.translation, ray.direction, ray.time);
+        if let Some(mut hit_record) = self.hittable.hit(&translated_ray, t_min, t_max) {
+            hit_record.p += self.translation;
+            return Some(hit_record);
+        }
+
+        None
+    }
+
+    fn bounding_box(&self, t0: f64, t1: f64) -> AABB {
+        let mut bounding_box = self.hittable.bounding_box(t0, t1);
+        bounding_box.add_translation(self.translation);
+        bounding_box
+    }
+}
