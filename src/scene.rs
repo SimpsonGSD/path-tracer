@@ -38,7 +38,15 @@ impl SceneBuilder {
     pub fn translate(&mut self, translation: Vec3) -> &mut Self {
         let last_hitable = self.scene.pop();
         if let Some(hitable) = last_hitable {
-            self.scene.push(Arc::new(Translate::new(translation, hitable)));
+            self.scene.push(Arc::new(Translate::new(hitable, translation)));
+        }
+        self
+    }
+
+    pub fn rotate_y(&mut self, angle: f64) -> &mut Self {
+        let last_hitable = self.scene.pop();
+        if let Some(hitable) = last_hitable {
+            self.scene.push(Arc::new(RotateY::new(hitable, angle)));
         }
         self
     }

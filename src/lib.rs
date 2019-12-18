@@ -854,12 +854,16 @@ fn cornell_box() -> Box<dyn Hitable + Send + Sync + 'static> {
         .flip_normals();
     scene_builder
         .add_hitable(
-            Arc::new(AxisAlignedBox::new(Vec3::new(130.0, 0.0, 65.0), Vec3::new(295.0, 165.0, 230.0), white_mat.clone()))
-        );
+            Arc::new(AxisAlignedBox::new(Vec3::new_zero_vector(), Vec3::new(165.0, 165.0, 165.0), white_mat.clone()))
+        )
+        .rotate_y(-18.0)
+        .translate(Vec3::new(130.0, 0.0, 65.0));
     scene_builder
         .add_hitable(
-            Arc::new(AxisAlignedBox::new(Vec3::new(265.0, 0.0, 295.0), Vec3::new(430.0, 330.0, 460.0), white_mat.clone()))
-        );
+            Arc::new(AxisAlignedBox::new(Vec3::new_zero_vector(), Vec3::new(165.0, 330.0, 165.0), white_mat.clone()))
+        )
+        .rotate_y(15.0)
+        .translate(Vec3::new(265.0, 0.0, 295.0));
 
     scene_builder.as_bvh()
 }

@@ -90,7 +90,7 @@ pub struct Translate {
 }
 
 impl Translate {
-    pub fn new(translation: Vec3, hittable: Arc<dyn Hitable + Send + Sync>) -> Self {
+    pub fn new( hittable: Arc<dyn Hitable + Send + Sync>, translation: Vec3) -> Self {
         Self {
             translation,
             hittable,
@@ -114,5 +114,83 @@ impl Hitable for Translate {
         let mut bounding_box = self.hittable.bounding_box(t0, t1);
         bounding_box.add_translation(self.translation);
         bounding_box
+    }
+}
+
+pub struct RotateY {
+    hittable: Arc<dyn Hitable + Send + Sync>,
+    sin_theta: f64,
+    cos_theta: f64,
+    bounding_box: AABB,
+}
+
+impl RotateY {
+    pub fn new( hittable: Arc<dyn Hitable + Send + Sync>, angle: f64) -> Self {
+        let radians = angle.to_radians();
+        let sin_theta = radians.sin();
+        let cos_theta = radians.cos();
+        let bounding_box = hittable.bounding_box(0.0, 1.0);
+        let mut min = Vec3::from_float(std::f64::MAX);
+        let mut max = Vec3::from_float(-std::f64::MAX);
+
+        for i in 0..2 {
+            for j in 0..2 {
+                for k in 0..2 {
+                    let (i_f64, j_f64, k_f64) = (i as f64, j as f64, k as f64);
+                    let x = i_f64 * bounding_box.max().x + (1.0 - i_f64) * bounding_box.min().x;
+                    let y = j_f64 * bounding_box.max().y + (1.0 - j_f64) * bounding_box.min().y;
+                    let z = k_f64 * bounding_box.max().z + (1.0 - k_f64) * bounding_box.min().z;
+                    let new_x =  cos_theta * x + sin_theta * z;
+                    let new_z = -sin_theta * x + cos_theta * z;
+                    let new_axis = Vec3::new(new_x, y, new_z);
+                    min = vec3::min(&new_axis, &min);
+                    max = vec3::max(&new_axis, &max);
+                }
+            }
+        }
+
+        let bounding_box = AABB::new(min, max);
+
+        Self {
+            hittable,
+            sin_theta,
+            cos_theta,
+            bounding_box,
+        }
+    }
+
+    pub fn unrotate_vector(&self, v: &Vec3) -> Vec3 {
+        let mut rotated_vec = v.clone();
+        rotated_vec.x = self.cos_theta * v.x - self.sin_theta * v.z;
+        rotated_vec.z = self.sin_theta * v.x + self.cos_theta * v.z;
+        rotated_vec
+    }
+
+    pub fn rotate_vector(&self, v: &Vec3) -> Vec3 {
+        let mut rotated_vec = v.clone();
+        rotated_vec.x = self.cos_theta * v.x + self.sin_theta * v.z;
+        rotated_vec.z = -self.sin_theta * v.x + self.cos_theta * v.z;
+        rotated_vec
+    }
+}
+
+
+impl Hitable for RotateY {
+    fn bounding_box(&self, _t0: f64, _t1: f64) -> AABB {
+        self.bounding_box.clone()
+    }
+
+    fn hit(&self, r: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
+        let origin = self.unrotate_vector(&r.origin);
+        let direction = self.unrotate_vector(&r.direction);
+        let ray = Ray::new(origin, direction, r.time);
+        match self.hittable.hit(&ray, t_min, t_max) {
+            Some(mut hit_record) => {
+                hit_record.p = self.rotate_vector(&hit_record.p);
+                hit_record.normal = self.rotate_vector(&hit_record.normal);
+                Some(hit_record)
+            },
+            None => None
+        }
     }
 }
