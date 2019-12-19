@@ -128,6 +128,12 @@ impl Vec3 {
     }
 }
 
+impl std::fmt::Display for Vec3 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {}, {})", self.x, self.y, self.z)
+    }
+}
+
 pub fn cross(v1: &Vec3, v2: &Vec3) -> Vec3 {
     Vec3::new(
             v1.y*v2.z - v1.z*v2.y,

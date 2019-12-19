@@ -2,6 +2,7 @@
     not(any(feature = "dx12", feature = "metal", feature = "vulkan")),
     allow(unused)
 )]
+#![allow(dead_code)]
 
 // std library imports
 use std::fs::File;
@@ -67,6 +68,7 @@ mod input;
 mod rect;
 mod axis_aligned_box;
 mod scene;
+mod volume;
 
 use math::*;
 use hitable::*;
@@ -286,7 +288,8 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     //let world = two_perlin_spheres();
     //let world = textured_sphere();
     //let world = simple_light();
-    let world = cornell_box();
+    //let world = cornell_box();
+    let world = cornell_smoke();
 
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
     //let lookfrom = Vec3::new(26.0,2.0,3.0);
@@ -864,6 +867,93 @@ fn cornell_box() -> Box<dyn Hitable + Send + Sync + 'static> {
         )
         .rotate_y(15.0)
         .translate(Vec3::new(265.0, 0.0, 295.0));
+
+    scene_builder.as_bvh()
+}
+
+fn cornell_smoke() -> Box<dyn Hitable + Send + Sync + 'static> {
+
+    let mut material_builder = MaterialBuilder::new();
+
+    let red_mat = material_builder
+        .with_texture(
+            Arc::new(ConstantTexture::new(Vec3::new(0.65, 0.05, 0.05)))
+        )
+        .lambertian();
+
+    let green_mat = material_builder
+        .with_texture(
+            Arc::new(ConstantTexture::new(Vec3::new(0.12, 0.45, 0.15)))
+        )
+        .lambertian();
+
+    let white_mat = material_builder
+        .with_texture(
+            Arc::new(ConstantTexture::new(Vec3::from_float(0.73)))
+        )
+        .lambertian();
+
+    let light = material_builder
+        .with_texture(
+            Arc::new(ConstantTexture::new(Vec3::from_float(7.0)))
+        )
+        .diffuse_light();
+
+    let mut scene_builder = scene::SceneBuilder::new();
+    
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::X, green_mat))
+        )
+        .flip_normals();
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 0.0, AxisAlignedRectAxis::X, red_mat))
+        );
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(113.0, 443.0, 127.0, 432.0, 554.0, AxisAlignedRectAxis::Y, light))
+        );
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::Y, white_mat.clone()))
+        )
+        .flip_normals();
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 0.0, AxisAlignedRectAxis::Y, white_mat.clone()))
+        );
+    scene_builder
+        .add_hitable(
+            Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::Z, white_mat.clone()))
+        )
+        .flip_normals();
+
+    let medium_boundary = {
+        let mut scene_builder = scene::SceneBuilder::new();
+        scene_builder
+            .add_hitable(
+                Arc::new(AxisAlignedBox::new(Vec3::new_zero_vector(), Vec3::new(165.0, 165.0, 165.0), white_mat.clone()))
+            )
+            .rotate_y(-18.0)
+            .translate(Vec3::new(130.0, 0.0, 65.0));
+        scene_builder.as_hitable()
+    };
+
+    scene_builder.add_hitable(Arc::new(volume::ConstantMedium::new(medium_boundary, 0.01, Arc::new(ConstantTexture::new(Vec3::from_float(1.0))))));
+    
+    let medium_boundary = {
+        let mut scene_builder = scene::SceneBuilder::new();
+        scene_builder
+            .add_hitable(
+                Arc::new(AxisAlignedBox::new(Vec3::new_zero_vector(), Vec3::new(165.0, 330.0, 165.0), white_mat.clone()))
+            )
+            .rotate_y(15.0)
+            .translate(Vec3::new(265.0, 0.0, 295.0));
+        scene_builder.as_hitable()
+    };
+
+    scene_builder.add_hitable(Arc::new(volume::ConstantMedium::new(medium_boundary, 0.01, Arc::new(ConstantTexture::new(Vec3::from_float(0.0))))));
 
     scene_builder.as_bvh()
 }

@@ -1,6 +1,7 @@
+#![allow(dead_code)]
 use math::*;
 use hitable::HitRecord;
-use texture::{Texture, ConstantTexture};
+use texture::{Texture, ConstantTexture, ThreadsafeTexture};
 use std::sync::Arc;
 
 fn random_in_unit_sphere() -> Vec3 {
@@ -98,11 +99,18 @@ impl MaterialBuilder {
     }
 }  
 
+pub struct ScatterResult {
+    pub scattered: Ray,
+    pub attenuation: Vec3,
+}
+
 pub trait Material {
     // TODO(SS): return struct ray and attenuation so it's more obvious what these are
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Ray, Vec3)>; 
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult>; 
     fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3;
 }
+
+pub type ThreadsafeMaterial = dyn Material + Send + Sync;
 
 pub struct Dielectric {
     ref_idx: f64
@@ -117,7 +125,7 @@ impl Dielectric {
 }
 
 impl Material for Dielectric {
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Ray, Vec3)> {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult> {
         let outward_normal: Vec3;
         let reflected = reflect(&r_in.direction(), &rec.normal);
         let ni_over_nt: f64;
@@ -150,7 +158,7 @@ impl Material for Dielectric {
             scattered = Ray::new(rec.p.clone(), refracted, r_in.time());
         }
 
-        Some((scattered, attenuation))
+        Some(ScatterResult{scattered, attenuation})
     }
 
     fn emitted(&self, _u: f64, _v: f64, _point: &Vec3) -> Vec3 {
@@ -174,7 +182,7 @@ impl Metal {
 }
 
 impl Material for Metal{
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Ray, Vec3)> {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult> {
         let reflected = reflect(&Vec3::new_unit_vector(&r_in.direction()), &rec.normal);
         let outgoing_ray_dir = reflected + self.fuzz*random_in_unit_sphere();
         let scattered = Ray::new(rec.p.clone(), outgoing_ray_dir, r_in.time());
@@ -182,7 +190,7 @@ impl Material for Metal{
         // check to see if outgoing ray is reflect externally or not, otherwise it is absorbed
         if vec3::dot(&scattered.direction(), &rec.normal) > 0.0 {
             let attenuation = self.albedo.clone();
-            Some((scattered, attenuation))
+            Some(ScatterResult{scattered, attenuation})
         } else {
             None
         }
@@ -208,11 +216,11 @@ impl Lambertian {
 }
 
 impl Material for Lambertian{
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Ray, Vec3)> {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult> {
         let target = &rec.p + &rec.normal + random_in_unit_sphere();
         let scattered = Ray::new(rec.p.clone(), &target-&rec.p, r_in.time());
         let attenuation = if self.emissive > 0.0 { Vec3::from_float(0.0)} else {self.albedo.value(rec.u, rec.v, &rec.p).clone()};
-        Some((scattered, attenuation))
+        Some(ScatterResult{scattered, attenuation})
     }
 
     fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
@@ -233,11 +241,35 @@ impl DiffuseLight {
 }
 
 impl Material for DiffuseLight {
-    fn scatter(&self, _r_in: &Ray, _rec: &HitRecord) -> Option<(Ray, Vec3)> {
+    fn scatter(&self, _r_in: &Ray, _rec: &HitRecord) -> Option<ScatterResult> {
         None
     }
 
     fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
         self.texture.value(u, v, point)
+    }
+}
+
+pub struct Isotropic {
+    albedo: Arc<ThreadsafeTexture>,
+} 
+
+impl Isotropic {
+    pub fn new(albedo: Arc<ThreadsafeTexture>) -> Self {
+        Self {
+            albedo,
+        }
+    }
+}
+
+impl Material for Isotropic {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult>{
+        let scattered = Ray::new(rec.p, random_in_unit_sphere(), r_in.time);
+        let attenuation = self.albedo.value(rec.u, rec.v, &rec.p);
+        Some(ScatterResult{scattered, attenuation})
+    } 
+
+    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3{
+        Vec3::new_zero_vector()
     }
 }

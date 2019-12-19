@@ -29,6 +29,8 @@ pub trait Hitable {
     fn bounding_box(&self, t0: f64, t1: f64) -> AABB;
 }
 
+pub type ThreadsafeHitable = dyn Hitable + Send + Sync;
+
 pub struct HitableList {
     list: Vec<Arc<dyn Hitable + Send + Sync + 'static>>
 }
@@ -118,14 +120,14 @@ impl Hitable for Translate {
 }
 
 pub struct RotateY {
-    hittable: Arc<dyn Hitable + Send + Sync>,
+    hittable: Arc<ThreadsafeHitable>,
     sin_theta: f64,
     cos_theta: f64,
     bounding_box: AABB,
 }
 
 impl RotateY {
-    pub fn new( hittable: Arc<dyn Hitable + Send + Sync>, angle: f64) -> Self {
+    pub fn new( hittable: Arc<ThreadsafeHitable>, angle: f64) -> Self {
         let radians = angle.to_radians();
         let sin_theta = radians.sin();
         let cos_theta = radians.cos();

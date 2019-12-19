@@ -7,6 +7,8 @@ pub trait Texture {
     fn value(&self, u: f64, v: f64, point: &Vec3) -> Vec3;
 }
 
+pub type ThreadsafeTexture = dyn Texture + Send + Sync;
+
 pub struct ConstantTexture {
     colour: Vec3,
 }

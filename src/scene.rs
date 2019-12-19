@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::hitable::*;
 use std::sync::Arc;
 use crate::bvh::BvhNode;
@@ -14,12 +16,17 @@ impl SceneBuilder {
         }
     }
 
-    pub fn as_bvh(&self) -> Box<dyn Hitable + Send + Sync + 'static> {
+    pub fn as_bvh(mut self) -> Box<dyn Hitable + Send + Sync + 'static> {
         Box::new(BvhNode::from_list(self.scene.clone(), 0.0, 1.0))
     }
 
-    pub fn as_hitable_list(&self) -> HitableList {
+    pub fn as_hitable_list(mut self) -> HitableList {
         HitableList::new(self.scene.clone())
+    }
+
+    pub fn as_hitable(mut self) -> Arc<ThreadsafeHitable> {
+        let last_hitable = self.scene.pop();
+        last_hitable.unwrap()
     }
 
     pub fn add_hitable(&mut self, hitable: Arc<dyn Hitable + Send + Sync>) -> &mut Self {

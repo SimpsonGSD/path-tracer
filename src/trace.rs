@@ -302,8 +302,8 @@ fn color(r : &Ray, world: &Box<dyn Hitable + Send + Sync + 'static>, depth: i32,
     if let Some(hit_record) = world.hit(r, 0.001, f64::MAX) {
         let mut colour = if !disable_emissive {hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p)} else {Vec3::from_float(0.0)};
         if depth < 100 {
-            if  let Some((scattered, attenuation)) =  hit_record.mat.scatter(r, &hit_record) {
-                colour += attenuation * color(&scattered, world, depth+1, 0.001, f64::MAX, sky_brightness, disable_emissive);
+            if  let Some(scatter_result) =  hit_record.mat.scatter(r, &hit_record) {
+                colour += scatter_result.attenuation * color(&scatter_result.scattered, world, depth+1, 0.001, f64::MAX, sky_brightness, disable_emissive);
             }
         }
         return colour;
