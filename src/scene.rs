@@ -20,6 +20,10 @@ impl SceneBuilder {
         Box::new(BvhNode::from_list(self.scene.clone(), 0.0, 1.0))
     }
 
+    pub fn as_bvh_node(mut self) -> Arc<dyn Hitable + Send + Sync + 'static> {
+        Arc::new(BvhNode::from_list(self.scene.clone(), 0.0, 1.0))
+    }
+
     pub fn as_hitable_list(mut self) -> HitableList {
         HitableList::new(self.scene.clone())
     }

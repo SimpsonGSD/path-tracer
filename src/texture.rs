@@ -68,8 +68,7 @@ impl NoiseTexture {
 }
 
 impl Texture for NoiseTexture {
-    fn value(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
-        let scaled_point = self.scale * point;
+    fn value(&self, _u: f64, _v: f64, point: &Vec3) -> Vec3 {
         let noise = self.scale * point.z + 10.0 * noise::Perlin::turb(point, 7);
         Vec3::from_float(1.0) * 0.5 * (1.0 + noise.sin())
     }

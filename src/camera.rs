@@ -58,7 +58,7 @@ impl Camera {
     }
 
     pub fn get_forward(&self) -> Vec3 {
-        self.w.clone()
+        -self.w.clone()
     }
 
     pub fn get_up(&self) -> Vec3 {
@@ -112,7 +112,7 @@ impl Camera {
     -> bool {
         use rendy::init::winit::event::*;
 
-        const CAM_SPEED: f64 = 4.0;
+        const CAM_SPEED: f64 = 40.0;
         const MOUSE_LOOK_SPEED: f64 = 1.0;
 
         let mut camera_moved = false;

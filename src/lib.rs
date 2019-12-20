@@ -289,14 +289,18 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     //let world = textured_sphere();
     //let world = simple_light();
     //let world = cornell_box();
-    let world = cornell_smoke();
+    //let world = cornell_smoke();
+    let world = final_book_two();
 
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
     //let lookfrom = Vec3::new(26.0,2.0,3.0);
     let lookfrom = Vec3::new(278.0,278.0,-800.0);
+    
     //let lookat = Vec3::new(0.0,0.0,0.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
-    let lookat = Vec3::new(278.0,278.0,0.0);
+    //let lookat = Vec3::new(278.0,278.0,0.0);
+    let lookat = Vec3::new(278.0,278.0,-700.0);
+
     let dist_to_focus = 10.0;
     let aperture = 0.0;
     let aspect: f64 = (nx as f64)/(ny as f64);
@@ -954,6 +958,95 @@ fn cornell_smoke() -> Box<dyn Hitable + Send + Sync + 'static> {
     };
 
     scene_builder.add_hitable(Arc::new(volume::ConstantMedium::new(medium_boundary, 0.01, Arc::new(ConstantTexture::new(Vec3::from_float(0.0))))));
+
+    scene_builder.as_bvh()
+}
+
+fn final_book_two() -> Box<ThreadsafeHitable> {
+
+    let mut material_builder = MaterialBuilder::new();
+    
+    let white = material_builder
+        .with_texture(Arc::new(ConstantTexture::new(Vec3::new(0.73, 0.73, 0.73))))
+        .lambertian();
+    let ground = material_builder
+        .with_texture(Arc::new(ConstantTexture::new(Vec3::new(0.48, 0.83, 0.53))))
+        .lambertian();
+    let light = material_builder
+        .with_texture(Arc::new(ConstantTexture::new(Vec3::from_float(7.0))))
+        .diffuse_light();
+
+    let mut scene_builder = scene::SceneBuilder::new();
+
+    let mut floor_scene_builder = scene::SceneBuilder::new();
+    
+    let num_boxes = 20;
+    for i in 0..num_boxes {
+        for j in 0..num_boxes {
+            let (i_f64, j_f64) = (i as f64, j as f64);
+            let w = 100.0;
+            let x0 = -1000.0 + i_f64*w;
+            let z0 = -1000.0 + j_f64*w;
+            let y0 = 0.0;
+            let x1 = x0 + w;
+            let y1 = 100.0*(random::rand()+0.01);
+            let z1 = z0 + w;
+            floor_scene_builder.add_hitable(
+                Arc::new(AxisAlignedBox::new(Vec3::new(x0, y0, z0), Vec3::new(x1, y1, z1), ground.clone()))
+            );
+        }
+    }
+
+    scene_builder.add_hitable(floor_scene_builder.as_bvh_node());
+
+    scene_builder.add_hitable(
+        Arc::new(AxisAlignedRect::new(123.0, 423.0, 147.0, 412.0, 554.0, AxisAlignedRectAxis::Y, light.clone()))
+    );
+    
+    let center = Vec3::new(400.0, 400.0, 200.0);
+    scene_builder.add_hitable(
+        Arc::new(MovingSphere::new(center, center+Vec3::new(30.0,0.0,0.0), 0.0, 1.0, 50.0, Arc::new(Lambertian::new(Arc::new(ConstantTexture::new(Vec3::new(0.7, 0.3, 0.1))), 0.0))))
+    );
+    scene_builder.add_hitable(
+        Arc::new(Sphere::new(Vec3::new(260.0, 150.0, 45.0), 50.0, Arc::new(Dielectric::new(1.5))))
+    );
+    scene_builder.add_hitable(
+        Arc::new(Sphere::new(Vec3::new(0.0, 150.0, 145.0), 50.0, Arc::new(Metal::new(Vec3::new(0.8, 0.8, 0.9), 10.0))))
+    );
+
+    let boundary = Arc::new(Sphere::new(Vec3::new(360.0, 150.0, 145.0), 70.0, Arc::new(Dielectric::new(1.5))));
+    scene_builder.add_hitable(boundary.clone());
+    scene_builder.add_hitable(
+        Arc::new(volume::ConstantMedium::new(boundary.clone(), 0.2, Arc::new(ConstantTexture::new(Vec3::new(0.2, 0.4, 0.9)))))
+    );
+
+    let boundary = Arc::new(Sphere::new(Vec3::new(0.0, 0.0, 0.0), 5000.0, Arc::new(Dielectric::new(1.5))));
+    scene_builder.add_hitable(boundary.clone());
+    scene_builder.add_hitable(
+        Arc::new(volume::ConstantMedium::new(boundary.clone(), 0.0001, Arc::new(ConstantTexture::new(Vec3::from_float(1.0)))))
+    );
+
+    let earth_material = material_builder
+        .with_texture(Arc::new(ImageTexture::new(EARTH_TEXTURE_BYTES)))
+        .lambertian();
+    scene_builder.add_hitable(
+        Arc::new(Sphere::new(Vec3::new(400.0, 200.0, 400.0), 100.0, earth_material))
+    );
+    scene_builder.add_hitable(
+        Arc::new(Sphere::new(Vec3::new(220.0, 280.0, 300.0), 80.0, Arc::new(Lambertian::new(Arc::new(NoiseTexture::new(0.1)), 0.0))))
+    );
+
+    let ns = 1000;
+    let mut sphere_scene_builder = scene::SceneBuilder::new();
+    for i in 0..ns {
+        sphere_scene_builder.add_hitable(
+            Arc::new(Sphere::new(Vec3::new(165.0*random::rand(), 165.0*random::rand(), 165.0*random::rand()), 10.0, white.clone()))
+        );
+    }
+    scene_builder
+        .add_hitable(sphere_scene_builder.as_bvh_node())
+        .rotate_y(15.0)
+        .translate(Vec3::new(-100.0, 270.0, 395.0));
 
     scene_builder.as_bvh()
 }
