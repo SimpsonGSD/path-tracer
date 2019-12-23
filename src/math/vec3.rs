@@ -52,7 +52,7 @@ impl Vec3 {
         self.x*self.x + self.y*self.y + self.z*self.z
     }
 
-    pub fn make_unit_vector(&mut self) {
+    pub fn normalise(&mut self) {
         let length = self.length();
         self.x /= length;
         self.y /= length;
@@ -572,7 +572,7 @@ mod tests {
         // unit vector
         let mut v = Vec3::new(1.0, 1.0, 1.0);
         let length = 3.0_f64.sqrt();
-        v.make_unit_vector();
+        v.normalise();
         assert_eq!(v, Vec3::new(1.0/length, 1.0/length, 1.0/length));
     }
 }

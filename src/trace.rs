@@ -76,7 +76,6 @@ pub struct TraceSceneBatchJob {
     image_size: (u32, u32),
     num_pixels_xy: (u32, u32),
     image_start_xy: (u32, u32),
-    local_buffer_u8: Vec<u8>,
     shared_scene_read_state: Arc<RwLock<SceneState>>,
     shared_scene_write_state: Arc<SceneOutput>,
     num_frames: i32,
@@ -104,7 +103,6 @@ impl TraceSceneBatchJob {
             image_size,
             num_pixels_xy,
             image_start_xy,
-            local_buffer_u8: if !realtime {vec![0; (num_pixels_xy.0*num_pixels_xy.1*3) as usize]} else {vec![]},
             shared_scene_read_state,
             shared_scene_write_state,
             num_frames: 0,
@@ -116,13 +114,6 @@ impl TraceSceneBatchJob {
     pub fn clear_buffer(&mut self) {
         self.num_frames = 0;
         self.num_frames_per_pixel = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1) as usize];
-        
-        if !self.realtime {
-            self.local_buffer_u8 = vec![0; (self.num_pixels_xy.0*self.num_pixels_xy.1*4) as usize]
-        } 
-        //else {
-       //     self.local_buffer_f32 = vec![0.0; (self.num_pixels_xy.0*self.num_pixels_xy.1*3) as usize]
-       // }
     }
 
     fn trace(&mut self) {
@@ -135,8 +126,6 @@ impl TraceSceneBatchJob {
             self.shared_scene_write_state.notify_task_completion();
             return;
         }
-
-        let local_enable_render: bool = ENABLE_RENDER && !self.realtime;
 
         for (row_idx, j) in (self.start_xy.1..self.end_xy.1).rev().enumerate() {
 
@@ -162,7 +151,7 @@ impl TraceSceneBatchJob {
                     let v: f64 = ((j as f64) + random) / (self.image_size.1 as f64);
 
                     let r = read_state.cam.get_ray(u, v);
-                    pixel_colour += color(&r, &read_state.world, 0, read_state.time0, read_state.time1, read_state.sky_brightness, read_state.disable_emissive);
+                    pixel_colour += color(&r, &read_state.world, 0, read_state.time0, read_state.time1, read_state.sky_brightness, read_state.disable_emissive, read_state.config.max_depth);
 
                     // SS: Debug uv image
                     // col += Vec3::new(u, v, 0.0);
@@ -187,123 +176,21 @@ impl TraceSceneBatchJob {
         // notify completion by decrementing task counter
         self.shared_scene_write_state.notify_task_completion();
     }
-
-    fn trace_offline(&mut self) {
-
-        let update_window_and_release_lock = |buffer: &mut Vec<u8>, window: &winit::window::Window, image_start_xy: (u32,u32), num_pixels_xy: (u32,u32), window_lock: &AtomicBool| {
-            // TODO(SS): Optimise so we are only copying the changed buffer parts
-            update_window_framebuffer_rect(&window, buffer, image_start_xy, num_pixels_xy);
-            window_lock.store(false, Ordering::Release);
-        };
-
-        //self.num_frames += if self.num_frames == 500 {0} else {1};
-        self.num_frames += 1;//if self.num_frames == 500 {0} else {1};
-        let read_state = self.shared_scene_read_state.read();
-
-        if read_state.config.realtime && random::rand() < CHANCE_TO_SKIP_TASK_PER_FRAME {
-            self.shared_scene_write_state.notify_task_completion();
-            return;
-        }
-
-        let local_enable_render: bool = ENABLE_RENDER && !self.realtime;
-
-        for (row_idx, j) in (self.start_xy.1..self.end_xy.1).rev().enumerate() {
-
-            let stride = (self.num_pixels_xy.0 * 4) as usize;
-
-            let start = (self.start_xy.0 * 4 + j * self.image_size.0 * 4) as usize;
-            let dest_buffer_row_slice = &mut self.shared_scene_write_state.buffer.write()[start..start + stride];
-
-            let mut buffer_offset = {
-                let row_offset = (self.num_pixels_xy.1 - 1 - row_idx as u32) as usize; // must iterate backwards for the render buffer for non-realtime
-                stride * row_offset
-            };
-
-            for (col_idx, i) in (self.start_xy.0..self.end_xy.0).enumerate() {
-
-               if read_state.config.realtime && random::rand() < CHANCE_TO_SKIP_PIXEL_PER_FRAME {
-                   continue;
-               }
-
-                let local_pixel_idx = row_idx * self.num_pixels_xy.0 as usize + col_idx;
-                self.num_frames_per_pixel[local_pixel_idx] += if self.num_frames_per_pixel[local_pixel_idx] <= 1000 {1} else {0};
-
-                let mut pixel_colour = Vec3::new_zero_vector();
-                for _ in 0..self.num_samples {
-                    let random = random::rand();
-                    let u: f64 = ((i as f64) + random) / (self.image_size.0 as f64);
-                    let random = random::rand();
-                    let v: f64 = ((j as f64) + random) / (self.image_size.1 as f64);
-
-                    let r = read_state.cam.get_ray(u, v);
-                    pixel_colour += color(&r, &read_state.world, 0, read_state.time0, read_state.time1, read_state.sky_brightness, read_state.disable_emissive);
-
-                    // SS: Debug uv image
-                    // col += Vec3::new(u, v, 0.0);
-                }
-
-                // PDF
-                pixel_colour = pixel_colour / self.num_samples as f64;
-
-                let index = col_idx*4 as usize;
-                // only required if rendering during trace
-                if local_enable_render {
-
-                    let tonemapped_col = reinhard_tonemap(&pixel_colour);
-
-                    // Gamma correct 1/2.0 and convert to u8
-                    let ir = (255.99*tonemapped_col.x.sqrt()) as u8;
-                    let ig = (255.99*tonemapped_col.y.sqrt()) as u8;
-                    let ib = (255.99*tonemapped_col.z.sqrt()) as u8;
-                    
-                    self.local_buffer_u8[buffer_offset]  = ib;
-                    buffer_offset += 1;
-                    self.local_buffer_u8[buffer_offset]  = ig;
-                    buffer_offset += 1;
-                    self.local_buffer_u8[buffer_offset]  = ir;
-                    buffer_offset += 1;
-                }
-
-                dest_buffer_row_slice[index] = pixel_colour.b() as f32;
-                dest_buffer_row_slice[index + 1] = pixel_colour.g() as f32;
-                dest_buffer_row_slice[index + 2] = pixel_colour.r() as f32;
-            }
-
-            if local_enable_render && j % RENDER_UPDATE_LATENCY == 0 && self.shared_scene_write_state.window_lock.compare_and_swap(false, true, Ordering::Acquire) {
-                // Update frame buffer to show progress
-                update_window_and_release_lock(&mut self.local_buffer_u8, &read_state.window, self.image_start_xy, self.num_pixels_xy, &self.shared_scene_write_state.window_lock);
-            }
-        }
-
-        if local_enable_render {
-            while self.shared_scene_write_state.window_lock.compare_and_swap(false, true, Ordering::Acquire) {
-                // Update frame buffer to show progress
-                update_window_and_release_lock(&mut self.local_buffer_u8, &read_state.window, self.image_start_xy, self.num_pixels_xy, &self.shared_scene_write_state.window_lock);
-            }
-        }
-        
-
-        // notify completion by decrementing task counter
-        self.shared_scene_write_state.notify_task_completion();
-    }
 }
 
 impl JobTask for TraceSceneBatchJob {
     fn run(&mut self) {
-        if self.realtime {
-            self.trace();
-        } else {
-            self.trace_offline();
-        }
+        self.trace();
     }
 }
 
-fn color(r : &Ray, world: &Box<dyn Hitable + Send + Sync + 'static>, depth: i32, t_min: f64, t_max: f64, sky_brightness: f64, disable_emissive: bool) -> Vec3 {
+fn color(r : &Ray, world: &Box<dyn Hitable + Send + Sync + 'static>, depth: i32, t_min: f64, t_max: f64, sky_brightness: f64, disable_emissive: bool, 
+         max_depth: i32) -> Vec3 {
     if let Some(hit_record) = world.hit(r, 0.001, f64::MAX) {
         let mut colour = if !disable_emissive {hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p)} else {Vec3::from_float(0.0)};
-        if depth < 100 {
+        if depth < max_depth {
             if  let Some(scatter_result) =  hit_record.mat.scatter(r, &hit_record) {
-                colour += scatter_result.attenuation * color(&scatter_result.scattered, world, depth+1, 0.001, f64::MAX, sky_brightness, disable_emissive);
+                colour += scatter_result.attenuation * color(&scatter_result.scattered, world, depth+1, 0.001, f64::MAX, sky_brightness, disable_emissive, max_depth);
             }
         }
         return colour;

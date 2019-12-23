@@ -16,6 +16,23 @@ fn random_in_unit_sphere() -> Vec3 {
     p
 }
 
+fn random_on_unit_sphere() -> Vec3 {
+    let mut p: Vec3;
+    loop  {
+        p = 2.0 * Vec3::new(random::rand(), random::rand(), random::rand()) - Vec3::new(1.0, 1.0, 1.0);
+        if p.squared_length() < 1.0 {
+            break
+        }
+    }
+
+    p.normalise();
+    p
+}
+
+fn unit_sphere_pdf() -> f64{
+    1.0 / (4.0 * std::f64::consts::PI)
+}
+
 fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
     v - &(2.0*vec3::dot(v, n)*n)
 }

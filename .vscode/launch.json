@@ -42,7 +42,20 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true
+            "externalConsole": false,
+            "preLaunchTask": "Rust: cargo build windows/linux [release]",
+        },
+        {
+            "name": "(Windows) Launch Offline",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/release/path_tracer.exe",
+            "args": ["-offline"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "preLaunchTask": "Rust: cargo build windows/linux [release]",
         },
         {
             "name": "(gdb) Launch",

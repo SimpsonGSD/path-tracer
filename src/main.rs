@@ -6,16 +6,15 @@ use std::env;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let realtime = if args.len() > 1 {
+    let mut max_depth = 10;
+    let mut realtime = true;
+    if args.len() > 1 {
         if args[1] == "-offline" {
-            false
-        } else {
-            true
+            realtime = false;
+            max_depth = 100;
         }
-    } else {
-        true
-    };
-    let config = Config::new(realtime);
+    }
+    let config = Config::new(realtime, max_depth);
     match path_tracer::run(config) {
         Err(e) => {
             if let Some(name) = e.name() {

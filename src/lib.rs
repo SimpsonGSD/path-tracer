@@ -110,13 +110,15 @@ pub fn application_root_dir() -> String {
 
 #[derive(Clone, Copy)]
 pub struct Config {
-    realtime: bool
+    realtime: bool,
+    max_depth: i32,
 }
 
 impl Config {
-    pub fn new(realtime: bool) -> Self {
+    pub fn new(realtime: bool, max_depth: i32) -> Self {
         Config {
-            realtime
+            realtime,
+            max_depth,
         }
     }
 }
@@ -154,18 +156,20 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     let buffer_size_elements = (nx*ny*4) as usize;
     let rgba_texture = MultiSliceReadWriteLock::new(vec![0.0_f32; buffer_size_elements]);
 
-    for (pixel_index, colour) in rgba_texture.write().chunks_mut(4).enumerate() {
-        let u = (pixel_index as f32 % nx as f32) / nx as f32;
-        let v = (pixel_index as f32 / nx as f32) / ny as f32;
-        for (i, pixel) in colour.iter_mut().enumerate() {
-            match i {
-                0 => *pixel = u,
-                1 => *pixel = v,
-                2 => *pixel = 0.0,
-                3 => *pixel = 0.0,
-                _ => {}
+    if false {
+        for (pixel_index, colour) in rgba_texture.write().chunks_mut(4).enumerate() {
+            let u = (pixel_index as f32 % nx as f32) / nx as f32;
+            let v = (pixel_index as f32 / nx as f32) / ny as f32;
+            for (i, pixel) in colour.iter_mut().enumerate() {
+                match i {
+                    0 => *pixel = u,
+                    1 => *pixel = v,
+                    2 => *pixel = 0.0,
+                    3 => *pixel = 0.0,
+                    _ => {}
+                }
+                //println!("u {}, v {}, i {} pixel_index {}", u, v, i, pixel_index);
             }
-            //println!("u {}, v {}, i {} pixel_index {}", u, v, i, pixel_index);
         }
     }
 
@@ -294,12 +298,14 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
     //let lookfrom = Vec3::new(26.0,2.0,3.0);
-    let lookfrom = Vec3::new(278.0,278.0,-800.0);
+    //let lookfrom = Vec3::new(178.0,278.0,-700.0);
+    let lookfrom = Vec3::new(543.8453940318894, 271.36936326134946, -500.1594145740549);
     
     //let lookat = Vec3::new(0.0,0.0,0.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
     //let lookat = Vec3::new(278.0,278.0,0.0);
-    let lookat = Vec3::new(278.0,278.0,-700.0);
+    //let lookat = Vec3::new(378.0,278.0,-300.0);
+    let lookat = Vec3::new(387.0484383920753, 253.65844851757655, -70.12524450632391);
 
     let dist_to_focus = 10.0;
     let aperture = 0.0;
@@ -315,9 +321,9 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
          buffer.chunks(4).map(|chunk| {
             let colour = Vec3::new(chunk[0] as f64,chunk[1] as f64,chunk[2] as f64);
             reinhard_tonemap(&colour)
-        }).for_each(|colour|{   output.push((255.99 * colour.z.sqrt()) as u8);
+        }).for_each(|colour|{   output.push((255.99 * colour.x.sqrt()) as u8);
                                 output.push((255.99 * colour.y.sqrt()) as u8);
-                                output.push((255.99 * colour.x.sqrt()) as u8);});
+                                output.push((255.99 * colour.z.sqrt()) as u8);});
 
         output
     };
@@ -342,141 +348,69 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     let default_sky_brightness = if default_disable_emissive {1.0} else {0.6};
     let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window, 0.0, 1.0/60.0, default_sky_brightness, default_disable_emissive, config)));
     let scene_output = Arc::new(SceneOutput::new(rgba_texture, remaining_tasks, window_lock));
-
-    if !config.realtime {
-        if !RUN_SINGLE_THREADED {
-            let mut batches: Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>> = vec![];
-            for task_y in 0..num_tasks_xy.1 {
-                for task_x in 0..num_tasks_xy.0 {
-                    let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
-                    let end_xy = (start_xy.0 + task_dim_xy.0, start_xy.1 + task_dim_xy.1);
-                    let batch = TraceSceneBatchJob::new(ns, 
-                                                        start_xy, end_xy, 
-                                                        image_size, 
-                                                         scene_state.clone(),
-                                                         scene_output.clone(),
-                                                         config.realtime);
-                    batches.push(Arc::new(RwLock::new(batch)));
-                }
-            }
-
-            Jobs::dispatch_jobs(&batches);
-
-          // loop {
-          //     // Poll message loop while we trace so we can early-exit
-          //     events_loop.run(move |event, _, control_flow| {
-          //         *control_flow = ControlFlow::Poll;
-          //         match event {
-          //             Event::WindowEvent { event, .. } => match event {
-          //                 WindowEvent::KeyboardInput { input, .. } => {
-          //                     if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
-          //                         std::process::exit(0);
-          //                     }
-          //                 }
-          //                 WindowEvent::CloseRequested => std::process::exit(0),
-          //                 _ => {},
-          //             },
-          //             _ => {},
-          //         }
-          //     });
-
-                // wait for threads to finish by checking atomic ref count on the shared image buffer
-                // Note(SS): Could use condvars here but then wouldn't be able to poll the message queue
-                if scene_output.remaining_tasks.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
-                    //break;
-                }
-
-                let percent_done = ((num_tasks - scene_output.remaining_tasks.load(Ordering::Relaxed) as u32) as f32 / num_tasks as f32) * 100.0;
-                update_window_title_status(&scene_state.read().window, &format!("Tracing... {} tasks, {} x {} {}spp. {}% done",  num_tasks, nx, ny, ns, percent_done));
+    let mut app_user_input_state: input::AppUserInputState = Default::default();
 
 
-                // yield thread
-                thread::sleep(Duration::from_secs(1));
-        } else {
-            let start_xy = (0, 0);
-            let end_xy = image_size;
-            let mut batch = TraceSceneBatchJob::new(ns, 
-                                                start_xy, end_xy, 
-                                                image_size, 
-                                                scene_state.clone(), 
-                                                scene_output.clone(),
-                                                config.realtime);
-            batch.run();
-        }
-        
-        // stats
-        let duration = start_timer.elapsed();
-        let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
-        update_window_title_status(&scene_state.read().window, &format!("Done.. in {}s.", duration_in_secs));
-
-        // write image 
-        let image_file_name = "output.ppm";
-        save_rgb_texture_as_ppm(image_file_name, &convert_to_rgb_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
-
-      // events_loop.run(move |event, _, control_flow| {
-      //     *control_flow = ControlFlow::Wait;
-      //     match event {
-      //         Event::WindowEvent { event, .. } => match event {
-      //             WindowEvent::KeyboardInput { input, .. } => {
-      //                 if let Some(VirtualKeyCode::Escape) = input.virtual_keycode {
-      //                     *control_flow = ControlFlow::Exit;
-      //                 }
-      //             }
-      //             WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-      //             WindowEvent::Resized(..) => {
-      //                 update_window_framebuffer(&scene_state.read().window, &mut convert_to_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
-      //             },
-      //             _ => {}
-      //         },
-      //          _ => {},
-      //     }
-      // });
-
-    } else  {
+    if RUN_SINGLE_THREADED {
+        let start_xy = (0, 0);
+        let end_xy = image_size;
+        let mut batch = TraceSceneBatchJob::new(ns, 
+                                            start_xy, end_xy, 
+                                            image_size, 
+                                            scene_state.clone(), 
+                                            scene_output.clone(),
+                                            config.realtime);
+        batch.run();
+    }
     
-        let controls_string = "Decrease/Increase Sky Brightness = O/P | Toggle Emissive = B | Decrease/Increase Exposure = R/T";
+    let controls_string = "Decrease/Increase Sky Brightness = O/P | Toggle Emissive = B | Decrease/Increase Exposure = R/T";
 
-        let mut batches = vec![];
-        let mut jobs: Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>>  = vec![];
-        for task_y in 0..num_tasks_xy.1 {
-            for task_x in 0..num_tasks_xy.0 {
-                let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
-                let end_xy = (start_xy.0 + task_dim_xy.0, start_xy.1 + task_dim_xy.1);
-                let batch = TraceSceneBatchJob::new(ns, 
-                                                    start_xy, end_xy, 
-                                                     image_size, 
-                                                     scene_state.clone(), 
-                                                     scene_output.clone(),
-                                                     config.realtime);
-                let batch = Arc::new(RwLock::new(batch));
-                batches.push(batch.clone());
-                jobs.push(batch);
-            }
+    let mut batches = vec![];
+    let mut jobs: Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>>  = vec![];
+    for task_y in 0..num_tasks_xy.1 {
+        for task_x in 0..num_tasks_xy.0 {
+            let start_xy = (task_dim_xy.0 * task_x, task_dim_xy.1 * task_y);
+            let end_xy = (start_xy.0 + task_dim_xy.0, start_xy.1 + task_dim_xy.1);
+            let batch = TraceSceneBatchJob::new(ns, 
+                                                start_xy, end_xy, 
+                                                    image_size, 
+                                                    scene_state.clone(), 
+                                                    scene_output.clone(),
+                                                    config.realtime);
+            let batch = Arc::new(RwLock::new(batch));
+            batches.push(batch.clone());
+            jobs.push(batch);
+        }
+    }
+
+    // if offline just kick off straight away
+    if !config.realtime {
+        let job_counter = Jobs::dispatch_jobs(&jobs);
+    }
+
+    let mut fps = 0.0;
+    let mut frame_time = 1.0 / 60.0;
+    let mut frame_counter = 0;
+    let app_start_timer = Instant::now();
+    let mut trace_completed = false;
+    
+    loop {
+
+        let start_timer = Instant::now();
+
+        let mut clear_scene = false;
+        if config.realtime {
+            let mut scene_state_writable = scene_state.write();
+            // update time
+            scene_state_writable.time0 = scene_state_writable.time1;
+            scene_state_writable.time1 += frame_time;
         }
 
-        
-        let mut fps = 0.0;
-        let mut frame_time = 1.0 / 60.0;
-        let mut frame_counter = 0;
+        aux.tonemapper_args.exposure_numframes_xx[1] += 1.0;
 
-        let mut app_user_input_state: input::AppUserInputState = Default::default();
+        let user_input = input::UserInput::poll_events_loop(&mut events_loop, &mut scene_state.write().window, &mut app_user_input_state);  
 
-        loop {
-
-            let start_timer = Instant::now();
-
-            let mut clear_scene = false;
-            {
-                let mut scene_state_writable = scene_state.write();
-                // update time
-                scene_state_writable.time0 = scene_state_writable.time1;
-                scene_state_writable.time1 += frame_time;
-            }
-
-            aux.tonemapper_args.exposure_numframes_xx[1] += 1.0;
-
-            let user_input = input::UserInput::poll_events_loop(&mut events_loop, &mut scene_state.write().window, &mut app_user_input_state);  
-
+        if config.realtime {
             if app_user_input_state.grabbed {
                 if user_input.keys_pressed.contains(&VirtualKeyCode::O) {
                     clear_scene = true;
@@ -502,6 +436,12 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                     aux.tonemapper_args.exposure_numframes_xx[0] -= 0.1;
                 }
 
+                if user_input.keys_pressed.contains(&VirtualKeyCode::K) {
+                    let mut scene_state_writable = scene_state.write();
+                    let cam = &mut scene_state_writable.cam;
+                    println!("Camera Details\nOrigin = {}\nLookAt= {}", cam.get_origin(), cam.get_look_at());
+                }
+
                 // handle input for camera
                 {
                         
@@ -519,63 +459,83 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                     }
                 }
             }
+        }
 
+        
+        // if realtime we wait for all jobs to finish, else we poll.
+        if config.realtime {
             let job_counter = Jobs::dispatch_jobs(&jobs);
             Jobs::wait_for_counter(&job_counter, 0);
-
-            let scene_state_readable = scene_state.read();
-
-            let source_buffer_size = aux.source_buffer.as_ref().unwrap().size();
-            let mut mapped_buffer = aux.source_buffer
-                .as_mut()
-                .unwrap()
-                .map(rendy.factory.device(), 0..source_buffer_size).unwrap();
-    
-            unsafe {
-                let buffer = scene_output.buffer.read();
-                let buffer_size = buffer.len() * std::mem::size_of::<f32>();
-                let mut writer = mapped_buffer
-                    .write(rendy.factory.device(), 0..(buffer_size as u64))
-                    .unwrap();
-                writer.write(buffer.as_slice());
+        } else {
+            // poll completion 
+            if !trace_completed {
+                if scene_output.remaining_tasks.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
+                    trace_completed = true;
+                        // stats taken to complete
+                    let duration = app_start_timer.elapsed();
+                    let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
+                    update_window_title_status(&scene_state.read().window, &format!("Done.. in {}s.", duration_in_secs));
+                } else {
+                    let percent_done = ((num_tasks - scene_output.remaining_tasks.load(Ordering::Relaxed) as u32) as f32 / num_tasks as f32) * 100.0;
+                    update_window_title_status(&scene_state.read().window, &format!("Tracing... {} tasks, {} x {} {}spp. {}% done",  num_tasks, nx, ny, ns,percent_done));
+                }
             }
+        }
+        let scene_state_readable = scene_state.read();
 
-            //+ Rendy Integration
-            rendy.factory.maintain(&mut rendy.families);
-            if let Some(ref mut frame_graph) = frame_graph {
-                frame_graph.run(&mut rendy.factory, &mut rendy.families, &mut aux);
-            }
-            frame_counter += 1;
+        let source_buffer_size = aux.source_buffer.as_ref().unwrap().size();
+        let mut mapped_buffer = aux.source_buffer
+            .as_mut()
+            .unwrap()
+            .map(rendy.factory.device(), 0..source_buffer_size).unwrap();
 
-            // throttle main thread to 60fps
-            const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
-            match SIXTY_HZ.checked_sub(start_timer.elapsed()) {
-                Some(sleep_time) => {
-                    thread::sleep(sleep_time);
-                },
-                None => {}
-            };
-            
-            let frame_duration = start_timer.elapsed();
-            frame_time = frame_duration.as_secs() as f64 + frame_duration.subsec_nanos() as f64 * 1e-9;
+        unsafe {
+            let buffer = scene_output.buffer.read();
+            let buffer_size = buffer.len() * std::mem::size_of::<f32>();
+            let mut writer = mapped_buffer
+                .write(rendy.factory.device(), 0..(buffer_size as u64))
+                .unwrap();
+            writer.write(buffer.as_slice());
+        }
 
+        //+ Rendy Integration
+        rendy.factory.maintain(&mut rendy.families);
+        if let Some(ref mut frame_graph) = frame_graph {
+            frame_graph.run(&mut rendy.factory, &mut rendy.families, &mut aux);
+        }
+        frame_counter += 1;
+
+        // throttle main thread to 60fps
+        const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
+        match SIXTY_HZ.checked_sub(start_timer.elapsed()) {
+            Some(sleep_time) => {
+               // thread::sleep(sleep_time);
+            },
+            None => {}
+        };
+        
+        let frame_duration = start_timer.elapsed();
+        frame_time = frame_duration.as_secs() as f64 + frame_duration.subsec_nanos() as f64 * 1e-9;
+
+        if config.realtime {
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
             scene_state_readable.window
                 .set_title(
                     &format!("Path Tracer: FPS = {} (time={:.2}ms) |  Frame = {} | Sky Brightness = {:.2} | Emissive = {} | Exposure = {:.1} | {}", 
-                             fps as i32, frame_time*1000.0, frame_counter,scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, aux.tonemapper_args.exposure_numframes_xx[0], controls_string));
+                            fps as i32, frame_time*1000.0, frame_counter,scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, aux.tonemapper_args.exposure_numframes_xx[0], controls_string));
+        } 
+        
+        if user_input.exit_requested {
 
-            if user_input.exit_requested {
-                // write image 
-                if OUTPUT_IMAGE_ON_CLOSE {
-                    let image_file_name = "output.ppm";
-                    save_rgba_texture_as_ppm(image_file_name, &convert_to_rgb_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
-                }
-
-                frame_graph.take().unwrap().dispose(&mut rendy.factory, &mut aux);
-                println!("Exit requested");
-                break;
+            // write image 
+            if OUTPUT_IMAGE_ON_CLOSE || !config.realtime {
+                let image_file_name = "output.ppm";
+                save_rgb_texture_as_ppm(image_file_name, &convert_to_rgb_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
             }
+
+            frame_graph.take().unwrap().dispose(&mut rendy.factory, &mut aux);
+            println!("Exit requested");
+            break;
         }
     }
 
