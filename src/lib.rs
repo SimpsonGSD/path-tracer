@@ -42,7 +42,9 @@ use rendy::{
     memory::{Write as rendy_write}
 };
 
-use rendy::init::winit;
+//use rendy::init::winit;
+//use ::winit;
+extern crate winit;
 use rendy::hal;
 use winit::{ 
     event::{Event, WindowEvent, VirtualKeyCode},
