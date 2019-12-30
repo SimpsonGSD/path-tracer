@@ -199,7 +199,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     let mut events_loop = winit::event_loop::EventLoop::new();
     let builder = WindowBuilder::new();
-    let window = builder.with_inner_size(LogicalSize{width: window_width, height: window_height}).build(&events_loop).unwrap();
+    let mut window = builder.with_inner_size(LogicalSize{width: window_width, height: window_height}).build(&events_loop).unwrap();
     window.set_title("Path Tracer");
 
     //+ Rendy integration
@@ -337,9 +337,6 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         output
     };
 
-
-   // update_window_framebuffer(&window, &mut convert_to_u8_and_gamma_correct(bgr_texture.read()), image_size);
-
     let num_cores = num_cpus::get();
     println!("Running on {} cores", num_cores);
 
@@ -355,7 +352,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     let default_disable_emissive = false;//config.realtime; // Disable emissive for realtime by default as it's noisy
     let default_sky_brightness = if default_disable_emissive {1.0} else {0.6};
-    let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, window, 0.0, 1.0/60.0, default_sky_brightness, default_disable_emissive, config)));
+    let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, 0.0, 1.0/60.0, default_sky_brightness, default_disable_emissive, config)));
     let scene_output = Arc::new(SceneOutput::new(rgba_texture, remaining_tasks, window_lock));
     let mut app_user_input_state: input::AppUserInputState = Default::default();
 
@@ -417,7 +414,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
         aux.tonemapper_args.exposure_numframes_xx[1] += 1.0;
 
-        let user_input = input::UserInput::poll_events_loop(&mut events_loop, &mut scene_state.write().window, &mut app_user_input_state);  
+        let user_input = input::UserInput::poll_events_loop(&mut events_loop, &mut window, &mut app_user_input_state);  
 
         if config.realtime {
             if app_user_input_state.grabbed {
@@ -483,10 +480,10 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                         // stats taken to complete
                     let duration = app_start_timer.elapsed();
                     let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
-                    update_window_title_status(&scene_state.read().window, &format!("Done.. in {}s.", duration_in_secs));
+                    update_window_title_status(&window, &format!("Done.. in {}s.", duration_in_secs));
                 } else {
                     let percent_done = ((num_tasks - scene_output.remaining_tasks.load(Ordering::Relaxed) as u32) as f32 / num_tasks as f32) * 100.0;
-                    update_window_title_status(&scene_state.read().window, &format!("Tracing... {} tasks, {} x {} {}spp. {}% done",  num_tasks, nx, ny, ns,percent_done));
+                    update_window_title_status(&window, &format!("Tracing... {} tasks, {} x {} {}spp. {}% done",  num_tasks, nx, ny, ns,percent_done));
                 }
             }
         }
@@ -518,6 +515,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
         match SIXTY_HZ.checked_sub(start_timer.elapsed()) {
             Some(sleep_time) => {
+                println!("sleeping for {:?}", sleep_time);
                  std::thread::sleep(sleep_time);
             },
             None => {}
@@ -528,7 +526,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
         if config.realtime {
             fps = fps* 0.9 + 0.1 * (1.0 / frame_time);
-            scene_state_readable.window
+            window
                 .set_title(
                     &format!("Path Tracer: FPS = {} (time={:.2}ms) |  Frame = {} | Sky Brightness = {:.2} | Emissive = {} | Exposure = {:.1} | {}", 
                             fps as i32, frame_time*1000.0, frame_counter,scene_state_readable.sky_brightness, !scene_state_readable.disable_emissive, aux.tonemapper_args.exposure_numframes_xx[0], controls_string));

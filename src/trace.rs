@@ -42,7 +42,6 @@ impl SceneOutput {
 pub struct SceneState {
     pub cam: Camera,
     pub world: Box<dyn Hitable + Send + Sync + 'static>,
-    pub window: winit::window::Window,
     pub time0: f64,
     pub time1: f64,
     pub sky_brightness: f64,
@@ -51,13 +50,12 @@ pub struct SceneState {
 }
 
 impl SceneState {
-    pub fn new(cam: Camera, world: Box<dyn Hitable + Send + Sync + 'static>, window: winit::window::Window, time0: f64, time1: f64, 
+    pub fn new(cam: Camera, world: Box<dyn Hitable + Send + Sync + 'static>, time0: f64, time1: f64, 
                sky_brightness: f64, disable_emissive: bool, config: Config) -> SceneState {
             
         SceneState {
             cam,
             world,
-            window,
             time0,
             time1,
             sky_brightness,
