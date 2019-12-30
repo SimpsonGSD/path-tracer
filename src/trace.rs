@@ -2,7 +2,6 @@ use std::f64;
 use std::sync::Arc;
 use parking_lot::{RwLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use rendy::init::winit;
 
 use math::*;
 use hitable::*;

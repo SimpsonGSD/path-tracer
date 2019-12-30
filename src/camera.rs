@@ -110,7 +110,7 @@ impl Camera {
         user_input: &input::UserInput, 
         frame_time: f64) 
     -> bool {
-        use rendy::init::winit::event::*;
+        use winit::event::*;
 
         const CAM_SPEED: f64 = 40.0;
         const MOUSE_LOOK_SPEED: f64 = 1.0;
