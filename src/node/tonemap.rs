@@ -1,20 +1,18 @@
 use rendy::{
     command::{QueueId, RenderPassEncoder},
-    factory::{Factory, ImageState},
+    factory::{Factory},
     graph::{render::*, GraphContext, ImageAccess, NodeBuffer, NodeImage},
-    hal::{pso::DescriptorPool, device::Device as _},
+    hal::{ device::Device as _},
     resource::{
         Buffer, BufferInfo, DescriptorSetLayout, Escape, Filter, Handle, ImageView, ImageViewInfo,
         Sampler, ViewKind, WrapMode,DescriptorSet, SamplerDesc,
     },
     shader::{PathBufShaderInfo, ShaderKind, SourceLanguage},
-    texture::{image::ImageTextureConfig, Texture},
 };
 
 use rendy::hal;
 
 use std::mem::size_of;
-use std::{fs::File, io::BufReader};
 
 use crate::Aux;
 
@@ -111,47 +109,6 @@ where
         _aux: &Aux<B>,
     ) -> rendy::shader::ShaderSet<B> {
         return SHADERS.build(factory, Default::default()).unwrap();
-
-        let vertex: PathBufShaderInfo = PathBufShaderInfo::new(
-            std::path::PathBuf::from("assets/shaders/fullscreen_triangle.vert"),
-            ShaderKind::Vertex,
-            SourceLanguage::GLSL,
-            "main",
-        );
-
-        let fragment: PathBufShaderInfo = PathBufShaderInfo::new(
-            std::path::PathBuf::from("assets/shaders/tonemap.frag"),
-            ShaderKind::Fragment,
-            SourceLanguage::GLSL,
-            "main",
-        );
-    
-        let mut shaders: rendy::shader::ShaderSetBuilder = rendy::shader::ShaderSetBuilder::default();
-
-        shaders = match shaders.with_vertex(&vertex) {
-            Err(e) => {
-                println!("{}", e);
-                panic!();
-            }
-            Ok(shaders) => {shaders}
-        };
-
-        shaders = match shaders.with_vertex(&fragment) {
-            Err(e) => {
-                println!("{}", e);
-                panic!();
-            }
-            Ok(shaders) => {shaders}
-        };
-
-        match shaders.build(factory, Default::default()) {
-            Err(e) => {
-                println!("{}", e);
-                panic!();
-            }
-            Ok(shaders_set) => shaders_set
-        }
-
     }
 
     fn layout(&self) -> Layout {
@@ -189,7 +146,7 @@ where
         self,
         ctx: &GraphContext<B>,
         factory: &mut Factory<B>,
-        queue: QueueId,
+        _queue: QueueId,
         aux: &Aux<B>,
         buffers: Vec<NodeBuffer>,
         images: Vec<NodeImage>,
@@ -359,7 +316,7 @@ where
         &mut self,
         layout: &B::PipelineLayout,
         mut encoder: RenderPassEncoder<'_, B>,
-        index: usize,
+        _index: usize,
         _aux: &Aux<B>,
     ) {
         unsafe {
@@ -377,6 +334,6 @@ where
         }
     }
 
-    fn dispose(self, factory: &mut Factory<B>, _aux: &Aux<B>) {
+    fn dispose(self, _factory: &mut Factory<B>, _aux: &Aux<B>) {
     }
 }

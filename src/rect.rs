@@ -60,7 +60,6 @@ impl AxisAlignedRect {
             AxisAlignedRectAxis::X => (self.c - ray.origin().x) / ray.direction().x,
             AxisAlignedRectAxis::Y => (self.c - ray.origin().y) / ray.direction().y,
             AxisAlignedRectAxis::Z => (self.c - ray.origin().z) / ray.direction().z,
-            _ => unimplemented!()
         }
     }
 
@@ -69,14 +68,12 @@ impl AxisAlignedRect {
             AxisAlignedRectAxis::X => ray.origin().y + t*ray.direction().y,
             AxisAlignedRectAxis::Y => ray.origin().x + t*ray.direction().x,
             AxisAlignedRectAxis::Z => ray.origin().x + t*ray.direction().x,
-            _ => unimplemented!()
         };
 
         let b = match self.plane_axis {
             AxisAlignedRectAxis::X => ray.origin().z + t*ray.direction().z,
             AxisAlignedRectAxis::Y => ray.origin().z + t*ray.direction().z,
             AxisAlignedRectAxis::Z => ray.origin().y + t*ray.direction().y,
-            _ => unimplemented!()
         };
 
         (a, b)
@@ -87,7 +84,6 @@ impl AxisAlignedRect {
             AxisAlignedRectAxis::X => Vec3::new(1.0,0.0,0.0),
             AxisAlignedRectAxis::Y => Vec3::new(0.0,1.0,0.0),
             AxisAlignedRectAxis::Z => Vec3::new(0.0,0.0,1.0),
-            _ => unimplemented!()
         }
     }
 }
@@ -117,7 +113,6 @@ impl Hitable for AxisAlignedRect {
             AxisAlignedRectAxis::X => AABB::new(Vec3::new(self.c-0.0001, self.amin, self.bmin), Vec3::new(self.c+0.0001, self.amax, self.bmax)),
             AxisAlignedRectAxis::Y => AABB::new(Vec3::new( self.amin, self.c-0.0001, self.bmin), Vec3::new(self.amax, self.c+0.0001, self.bmax)),
             AxisAlignedRectAxis::Z => AABB::new(Vec3::new(self.amin, self.bmin, self.c-0.0001), Vec3::new(self.amax, self.bmax, self.c + 0.0001)),
-            _ => unimplemented!()
         }
     }
 }

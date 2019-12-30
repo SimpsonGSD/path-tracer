@@ -2,7 +2,7 @@ use math::*;
 use material::Material;
 use hitable::*;
 use std::sync::Arc;
-use std::f64::consts::{PI, FRAC_2_PI, FRAC_PI_2, FRAC_1_PI};
+use std::f64::consts::{PI, FRAC_PI_2};
 
 pub struct Sphere {
     center: Vec3,

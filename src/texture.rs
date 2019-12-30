@@ -99,7 +99,7 @@ impl ImageTexture {
 }
 
 impl Texture for ImageTexture {
-    fn value(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
+    fn value(&self, u: f64, v: f64, _point: &Vec3) -> Vec3 {
         let (width_f64, height_f64) = (self.width as f64, self.height as f64);
         let i = u * width_f64;
         let j = v * height_f64 - 0.001;

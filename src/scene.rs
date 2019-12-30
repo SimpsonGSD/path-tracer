@@ -16,15 +16,15 @@ impl SceneBuilder {
         }
     }
 
-    pub fn as_bvh(mut self) -> Box<dyn Hitable + Send + Sync + 'static> {
+    pub fn as_bvh(self) -> Box<dyn Hitable + Send + Sync + 'static> {
         Box::new(BvhNode::from_list(self.scene.clone(), 0.0, 1.0))
     }
 
-    pub fn as_bvh_node(mut self) -> Arc<dyn Hitable + Send + Sync + 'static> {
+    pub fn as_bvh_node(self) -> Arc<dyn Hitable + Send + Sync + 'static> {
         Arc::new(BvhNode::from_list(self.scene.clone(), 0.0, 1.0))
     }
 
-    pub fn as_hitable_list(mut self) -> HitableList {
+    pub fn as_hitable_list(self) -> HitableList {
         HitableList::new(self.scene.clone())
     }
 

@@ -3,14 +3,12 @@ use rendy::{
         CommandBuffer, CommandPool, ExecutableState, Family, Families, FamilyId, Fence, MultiShot,
         PendingState, Queue, SimultaneousUse, Submission, Submit, Supports, Transfer,
     },
-    factory::{Factory, ImageState},
+    factory::{Factory},
     frame::Frames,
     graph::{
-        gfx_acquire_barriers, gfx_release_barriers, BufferAccess, BufferId, DynNode, GraphContext,
+        BufferAccess, BufferId, DynNode, GraphContext,
         ImageAccess, ImageId, NodeBuffer, NodeBuilder, NodeId, NodeImage, NodeBuildError,
     },
-    texture::Texture,
-    resource::{SubresourceRange},
 };
 
 use rendy::hal;
@@ -88,7 +86,7 @@ where
         ctx: &GraphContext<B>,
         factory: &mut Factory<B>,
         family: &mut Family<B>,
-        queue: usize,
+        _queue: usize,
         aux: &Aux<B>,
         buffers: Vec<NodeBuffer>,
         images: Vec<NodeImage>,
@@ -118,7 +116,6 @@ where
         //    }
         //}
 
-        let queue_id = family.queue(queue).id();
         let image = ctx.get_image(images[0].id).unwrap();
         let image_extent = image.kind().extent();
 

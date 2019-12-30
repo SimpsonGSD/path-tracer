@@ -12,7 +12,6 @@ use std::time::{Instant, Duration};
 use parking_lot::{RwLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::thread;
 
 // 3rd party crate imports
 #[cfg(target_os = "windows")]
@@ -35,8 +34,6 @@ pub type Backend = rendy::empty::Backend;
 
 extern crate rendy;
 use rendy::{
-    command::{Graphics, Supports},
-    factory::{Factory, ImageState},
     graph::{present::PresentNode, render::*, GraphBuilder},
     resource::{BufferInfo, Buffer, Escape},
     memory::{Write as rendy_write}
@@ -47,12 +44,10 @@ use rendy::{
 extern crate winit;
 use rendy::hal;
 use winit::{ 
-    event::{Event, WindowEvent, VirtualKeyCode},
-    event_loop::{ControlFlow, EventLoop},
+    event::{VirtualKeyCode},
     window::WindowBuilder,
     dpi::LogicalSize,
 };
-use winit_utils::*;
 
 // module imports
 mod math;
@@ -216,19 +211,6 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     let surface = rendy.factory.create_surface(&window).map_err(|_|failure::err_msg("Could create backbuffer surface"))?;
     let hw_alignment = hal::adapter::PhysicalDevice::limits(rendy.factory.physical())
         .min_uniform_buffer_offset_alignment;
-    let queue = rendy.families
-        .as_slice()
-        .iter()
-        .find(|family| {
-            if let Some(Graphics) = family.capability().supports() {
-                true
-            } else {
-                false
-            }
-        })
-        .unwrap()
-        .as_slice()[0]
-        .id();
 
     let source_buffer_size: u64 = (image_size.0 * image_size.1) as u64 * 4 * std::mem::size_of::<f32>() as u64;
     let mut source_buffer = rendy.factory
@@ -311,8 +293,6 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     let mut frame_graph = Some(frame_graph);
     //- Rendy integration
 
-    let start_timer = Instant::now();
-    
     update_window_title_status(&window, &format!("Starting.. image size ({} x {})", nx, ny));
 
     //let world = two_spheres();
@@ -414,7 +394,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     // if offline just kick off straight away
     if !config.realtime {
-        let job_counter = Jobs::dispatch_jobs(&jobs);
+        Jobs::dispatch_jobs(&jobs);
     }
 
     let mut fps = 0.0;
@@ -538,7 +518,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
         match SIXTY_HZ.checked_sub(start_timer.elapsed()) {
             Some(sleep_time) => {
-               // thread::sleep(sleep_time);
+                 std::thread::sleep(sleep_time);
             },
             None => {}
         };
@@ -1027,7 +1007,7 @@ fn final_book_two() -> Box<ThreadsafeHitable> {
 
     let ns = 1000;
     let mut sphere_scene_builder = scene::SceneBuilder::new();
-    for i in 0..ns {
+    for _ in 0..ns {
         sphere_scene_builder.add_hitable(
             Arc::new(Sphere::new(Vec3::new(165.0*random::rand(), 165.0*random::rand(), 165.0*random::rand()), 10.0, white.clone()))
         );

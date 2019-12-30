@@ -286,7 +286,7 @@ impl Material for Isotropic {
         Some(ScatterResult{scattered, attenuation})
     } 
 
-    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3{
+    fn emitted(&self, _u: f64, _v: f64, _point: &Vec3) -> Vec3{
         Vec3::new_zero_vector()
     }
 }

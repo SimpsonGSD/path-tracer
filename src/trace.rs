@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use math::*;
 use hitable::*;
 use camera::Camera;
-use winit_utils::*;
 
 use jobs::JobTask;
 use jobs::MultiSliceReadWriteLock;
@@ -183,7 +182,7 @@ impl JobTask for TraceSceneBatchJob {
     }
 }
 
-fn color(r : &Ray, world: &Box<dyn Hitable + Send + Sync + 'static>, depth: i32, t_min: f64, t_max: f64, sky_brightness: f64, disable_emissive: bool, 
+fn color(r : &Ray, world: &Box<dyn Hitable + Send + Sync + 'static>, depth: i32, _t_min: f64, _t_max: f64, sky_brightness: f64, disable_emissive: bool, 
          max_depth: i32) -> Vec3 {
     if let Some(hit_record) = world.hit(r, 0.001, f64::MAX) {
         let mut colour = if !disable_emissive {hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p)} else {Vec3::from_float(0.0)};
