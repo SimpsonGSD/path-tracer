@@ -114,14 +114,39 @@ pub fn application_root_dir() -> String {
 pub struct Config {
     realtime: bool,
     max_depth: i32,
+    spp: u32, // samples per pixel
 }
 
 impl Config {
-    pub fn new(realtime: bool, max_depth: i32) -> Self {
+    pub fn new() -> Self {
         Config {
-            realtime,
-            max_depth,
+            realtime: true,
+            max_depth: 10,
+            spp: 1,
         }
+    }
+
+    pub fn from_cmdline(args: &Vec<String>) -> Self {
+
+        let mut config = Config::new();
+
+        if args.len() > 1 {
+            // set up some defaults first if offline is detected 
+            if args.contains(&String::from("-offline")) {
+                config.realtime = false;
+                config.max_depth = 100;
+                config.spp = 100;
+            }
+
+            for arg in args {
+                if let Some(index) = arg.find("-spp=") {
+                    // TODO(SS): Broken
+                    config.spp = arg[(index+1)..].parse().unwrap();
+                }
+            }
+        }
+
+        config
     }
 }
 
@@ -147,9 +172,11 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         .filter_module("path-tracer", log::LevelFilter::Trace)
         .init();
 
+    println!("Config:\nrealtime={}\nspp={}\nmax depth={}", config.realtime, config.spp, config.realtime);
+
     let nx: u32 = 1280;
     let ny: u32 = 720;
-    let ns: u32 = if config.realtime {1} else {100}; // number of samples
+    let ns: u32 = config.spp;
     let image_size = (nx,ny);
 
     let window_width = nx as f64;

@@ -19,6 +19,36 @@
             "args": []
         },
         {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Cargo launch mac",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--release",
+                    "--features",
+                    "metal"
+                ]
+            },
+            "program": "${cargo:program}",
+            "args": []
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Cargo launch offline mac",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--release",
+                    "--features",
+                    "metal",
+                ]
+            },
+            "program": "${cargo:program}",
+            "args": ["-offline", "-spp=1"]
+        },
+        {
             "name": "(lldb) Launch",
             "type": "lldb",
             "request": "launch",
