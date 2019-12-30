@@ -134,9 +134,9 @@ impl Config {
             }
 
             for arg in args {
-                if let Some(index) = arg.find("-spp=") {
-                    // TODO(SS): Broken
-                    config.spp = arg[(index+1)..].parse().unwrap();
+                if arg.starts_with("-spp=") {
+                    let spp = &arg[5..];
+                    config.spp = spp.parse().unwrap();
                 }
             }
         }
