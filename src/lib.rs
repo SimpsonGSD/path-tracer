@@ -169,8 +169,8 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
     println!("Config:\nrealtime={}\nspp={}\nmax depth={}", config.realtime, config.spp, config.realtime);
 
-    let nx: u32 = 1280;
-    let ny: u32 = 720;
+    let nx: u32 = 500;
+    let ny: u32 = 500;
     let ns: u32 = config.spp;
     let image_size = (nx,ny);
 
@@ -301,29 +301,30 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     //let world = two_perlin_spheres();
     //let world = textured_sphere();
     //let world = simple_light();
-    //let world = cornell_box();
     //let world = cornell_smoke();
-    let world = final_book_two();
+    //let world = final_book_two();
 
     //let lookfrom = Vec3::new(-2.0,2.0,1.0);
     //let lookfrom = Vec3::new(26.0,2.0,3.0);
     //let lookfrom = Vec3::new(178.0,278.0,-700.0);
-    let lookfrom = Vec3::new(543.8453940318894, 271.36936326134946, -500.1594145740549);
+    //let lookfrom = Vec3::new(543.8453940318894, 271.36936326134946, -500.1594145740549);
     
     //let lookat = Vec3::new(0.0,0.0,0.0);
     //let lookat = Vec3::new(0.0,0.0,0.0);
     //let lookat = Vec3::new(278.0,278.0,0.0);
     //let lookat = Vec3::new(378.0,278.0,-300.0);
-    let lookat = Vec3::new(387.0484383920753, 253.65844851757655, -70.12524450632391);
+    //let lookat = Vec3::new(387.0484383920753, 253.65844851757655, -70.12524450632391);
 
-    let dist_to_focus = 10.0;
-    let aperture = 0.0;
+    //let dist_to_focus = 10.0;
+    //let aperture = 0.0;
     let aspect: f64 = (nx as f64)/(ny as f64);
     //let fov = 20.0;
-    let fov = 40.0;
+    //let fov = 40.0;
 
    // let cam = Arc::new(RwLock::new(Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), 20.0, aspect, aperture, dist_to_focus, 0.0, 1.0)));
-    let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), fov, aspect, aperture, dist_to_focus, 0.0, 1.0);
+    //let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0,1.0,0.0), fov, aspect, aperture, dist_to_focus, 0.0, 1.0);
+
+    let (world, cam) = cornell_box(aspect);
 
     let convert_to_rgb_u8_and_gamma_correct = |buffer: &Vec<f32>| -> Vec<u8>{
         let mut output = Vec::with_capacity(buffer.len());
@@ -340,9 +341,11 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     let num_cores = num_cpus::get();
     println!("Running on {} cores", num_cores);
 
-    let task_dim_xy = (120, 120);
+    let task_dim_xy = (nx / 9, ny / 9);
+    println!("Task Dimensions = {}x{}", task_dim_xy.0, task_dim_xy.1);
     // sanitize so num tasks divides exactly into image
     let task_dim_xy = (round_down_to_closest_factor(task_dim_xy.0, nx), round_down_to_closest_factor(task_dim_xy.1, ny));
+    println!("Task Dimensions fitted to image size = {}x{}", task_dim_xy.0, task_dim_xy.1);
     let num_tasks_xy = (nx / task_dim_xy.0, ny / task_dim_xy.1);
     let num_tasks = num_tasks_xy.0 * num_tasks_xy.1;
     let window_lock = AtomicBool::new(false);
@@ -351,7 +354,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
     update_window_title_status(&window, &format!("Tracing... {} tasks", num_tasks));
 
     let default_disable_emissive = false;//config.realtime; // Disable emissive for realtime by default as it's noisy
-    let default_sky_brightness = if default_disable_emissive {1.0} else {0.6};
+    let default_sky_brightness = 0.0;
     let scene_state = Arc::new(RwLock::new(SceneState::new(cam, world, 0.0, 1.0/60.0, default_sky_brightness, default_disable_emissive, config)));
     let scene_output = Arc::new(SceneOutput::new(rgba_texture, remaining_tasks, window_lock));
     let mut app_user_input_state: input::AppUserInputState = Default::default();
@@ -481,7 +484,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                     let duration = app_start_timer.elapsed();
                     let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
                     update_window_title_status(&window, &format!("Done.. in {}s.", duration_in_secs));
-                } else {
+                } else if frame_counter % 50 == 0 {
                     let percent_done = ((num_tasks - scene_output.remaining_tasks.load(Ordering::Relaxed) as u32) as f32 / num_tasks as f32) * 100.0;
                     update_window_title_status(&window, &format!("Tracing... {} tasks, {} x {} {}spp. {}% done",  num_tasks, nx, ny, ns,percent_done));
                 }
@@ -513,9 +516,10 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
         // throttle main thread to 60fps
         const SIXTY_HZ: Duration = Duration::from_micros(1_000_000 / 60);
-        match SIXTY_HZ.checked_sub(start_timer.elapsed()) {
+        let frame_duration = start_timer.elapsed();
+        match SIXTY_HZ.checked_sub(frame_duration) {
             Some(sleep_time) => {
-                println!("sleeping for {:?}", sleep_time);
+               // println!("frame time {:?} sleeping for {:?}", frame_time, sleep_time);
                  std::thread::sleep(sleep_time);
             },
             None => {}
@@ -769,7 +773,7 @@ fn simple_light() -> Box<dyn Hitable + Send + Sync + 'static> {
     Box::new(BvhNode::from_list(list, 0.0, 1.0))
 }
 
-fn cornell_box() -> Box<dyn Hitable + Send + Sync + 'static> {
+fn cornell_box(aspect: f64) -> (Box<ThreadsafeHitable>, Camera) {
 
     let mut material_builder = MaterialBuilder::new();
 
@@ -839,10 +843,19 @@ fn cornell_box() -> Box<dyn Hitable + Send + Sync + 'static> {
         .rotate_y(15.0)
         .translate(Vec3::new(265.0, 0.0, 295.0));
 
-    scene_builder.as_bvh()
+    let lookfrom = Vec3::new(278.0, 278.0, -800.0);
+    let lookat = Vec3::new(278.0, 278.0, 0.0);
+    let dist_to_focus = 10.0;
+    let aperture = 0.0;
+    let vfov = 40.0;
+    let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0, 1.0, 0.0),
+                        vfov, aspect, aperture, dist_to_focus, 0.0, 1.0);
+
+
+    (scene_builder.as_bvh(), cam)
 }
 
-fn cornell_smoke() -> Box<dyn Hitable + Send + Sync + 'static> {
+fn cornell_smoke(aspect: f64) -> (Box<ThreadsafeHitable>, Camera) {
 
     let mut material_builder = MaterialBuilder::new();
 
@@ -926,7 +939,16 @@ fn cornell_smoke() -> Box<dyn Hitable + Send + Sync + 'static> {
 
     scene_builder.add_hitable(Arc::new(volume::ConstantMedium::new(medium_boundary, 0.01, Arc::new(ConstantTexture::new(Vec3::from_float(0.0))))));
 
-    scene_builder.as_bvh()
+    let lookfrom = Vec3::new(278.0, 278.0, -800.0);
+    let lookat = Vec3::new(278.0, 278.0, 0.0);
+    let dist_to_focus = 10.0;
+    let aperture = 0.0;
+    let vfov = 40.0;
+    let cam = Camera::new(lookfrom, lookat, Vec3::new(0.0, 1.0, 0.0),
+                      vfov, aspect, aperture, dist_to_focus, 0.0, 1.0);
+
+
+    (scene_builder.as_bvh(), cam)
 }
 
 fn final_book_two() -> Box<ThreadsafeHitable> {

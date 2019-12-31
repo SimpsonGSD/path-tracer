@@ -27,25 +27,12 @@ pub fn clamp<T: PartialOrd<T> + Clone>(a: &T, minimum: &T, maximum: &T) -> T {
 
 pub fn round_down_to_closest_factor (factor_to_round: u32, factor_of: u32) -> u32 {
     let factor = factor_of as f64 / factor_to_round as f64;
-    let fract = factor.fract();
-    if fract == 0.0 {
-        return factor_to_round;
-    } else {
-        let fract = 1.0 - fract; // minus to round down
-        let factor_int = (factor_to_round as i32) - (fract * factor_to_round as f64).floor() as i32; // minus to round down
-        return factor_int.max(1) as u32; // handle overflow
-    }
+    factor_of / factor.floor() as u32
 }
 
 pub fn round_up_to_closest_factor (factor_to_round: u32, factor_of: u32) -> u32 {
     let factor = factor_of as f64 / factor_to_round as f64;
-    let fract = factor.fract();
-    if fract == 0.0 {
-        return factor_to_round;
-    } else {
-        let factor_int = (factor_to_round as i32) + (fract * factor_to_round as f64).floor() as i32; // minus to round down
-        return factor_int.max(1) as u32;
-    }
+    factor_of / factor.round() as u32
 }
 
 #[cfg(test)]

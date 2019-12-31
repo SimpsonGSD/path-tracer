@@ -46,7 +46,7 @@
                 ]
             },
             "program": "${cargo:program}",
-            "args": ["-offline", "-spp=1"]
+            "args": ["-offline", "-spp=100"]
         },
         {
             "name": "(lldb) Launch",
