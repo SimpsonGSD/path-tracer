@@ -54,7 +54,8 @@ impl Camera {
         let rd = random_in_unit_disk()*self.lens_radius;
         let offset = &self.u*rd.x + &self.v*rd.y;
         let time = self.time0 + random::rand()*(self.time1 - self.time0);
-        Ray::new(&self.origin + &offset, &self.lower_left_corner + &self.horizontal*s + &self.vertical*t - &self.origin - offset, time)
+        let direction = self.lower_left_corner + self.horizontal*s + self.vertical*t - self.origin - offset;
+        Ray::new(&self.origin + &offset, direction, time)
     }
 
     pub fn get_forward(&self) -> Vec3 {

@@ -147,7 +147,7 @@ impl TraceSceneBatchJob {
                     let v: f64 = ((j as f64) + random) / (self.image_size.1 as f64);
 
                     let r = read_state.cam.get_ray(u, v);
-                    pixel_colour += color(&r, &read_state.world, 0, read_state.time0, read_state.time1, read_state.sky_brightness, read_state.disable_emissive, read_state.config.max_depth);
+                    pixel_colour += color(&r, &read_state.world, 0, read_state.sky_brightness, read_state.disable_emissive, read_state.config.max_depth);
 
                     // SS: Debug uv image
                     // col += Vec3::new(u, v, 0.0);
@@ -180,24 +180,36 @@ impl JobTask for TraceSceneBatchJob {
     }
 }
 
-fn color(r : &Ray, world: &Box<dyn Hitable + Send + Sync + 'static>, depth: i32, _t_min: f64, _t_max: f64, sky_brightness: f64, disable_emissive: bool, 
-         max_depth: i32) -> Vec3 {
+fn color(
+    r : &Ray, 
+    world: &Box<ThreadsafeHitable>, 
+    depth: i32, 
+    sky_brightness: f64, 
+    disable_emissive: bool, 
+    max_depth: i32) -> Vec3 {
+
     if let Some(hit_record) = world.hit(r, 0.001, f64::MAX) {
-        let mut colour = if !disable_emissive {hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p)} else {Vec3::from_float(0.0)};
+        let emissive = if !disable_emissive {   
+            hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p)
+        } else {
+            Vec3::from_float(0.0)
+        };
+        let mut colour = Vec3::new_zero_vector();
         if depth < max_depth {
-            if  let Some(scatter_result) =  hit_record.mat.scatter(r, &hit_record) {
-                colour += scatter_result.attenuation * color(&scatter_result.scattered, world, depth+1, 0.001, f64::MAX, sky_brightness, disable_emissive, max_depth);
+            if let Some(scatter_result) = hit_record.mat.scatter(r, &hit_record) {
+                let pdf = hit_record.mat.scattering_pdf(r, &hit_record, &scatter_result.scattered);
+                colour = scatter_result.albedo * pdf;
+                let scattered_ray_colour = color(&scatter_result.scattered, world, depth+1, sky_brightness, disable_emissive, max_depth) / scatter_result.pdf;
+                colour *= scattered_ray_colour;
             }
         }
-        return colour;
+        return colour + emissive;
     } else {
         let unit_dir = Vec3::new_unit_vector(&r.direction());
         let t = 0.5*(unit_dir.y + 1.0);
         let white = Vec3::from_float(1.0);
-        //let sky = Vec3::new(135.0/255.0, 206.0/255.0, 235.0/255.0);
         let sky = Vec3::new(0.5, 0.7, 1.0);
         return lerp(&white, &sky, t) * sky_brightness;
-        //return Vec3::new(0.0, 0.0, 0.0);
     }
 }
 

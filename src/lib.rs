@@ -129,7 +129,7 @@ impl Config {
             // set up some defaults first if offline is detected 
             if args.contains(&String::from("-offline")) {
                 config.realtime = false;
-                config.max_depth = 100;
+                config.max_depth = 50;
                 config.spp = 100;
             }
 
@@ -167,7 +167,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         .filter_module("path-tracer", log::LevelFilter::Trace)
         .init();
 
-    println!("Config:\nrealtime={}\nspp={}\nmax depth={}", config.realtime, config.spp, config.realtime);
+    println!("Config:\nrealtime={}\nspp={}\nmax depth={}", config.realtime, config.spp, config.max_depth);
 
     let nx: u32 = 500;
     let ny: u32 = 500;

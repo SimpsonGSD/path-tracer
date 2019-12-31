@@ -12,6 +12,8 @@ empty = ["rendy/empty"]
 
 [profile.dev]
 opt-level = 1
+# attempt to speed up compilation to allow more opportunity parallel compilation for worse codegen
+codegen-units = 4
 
 [profile.release]
 debug = true
