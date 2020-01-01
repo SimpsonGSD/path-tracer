@@ -71,7 +71,7 @@ struct ThreadPool {
 
 impl ThreadPool {
     pub fn new() -> ThreadPool {
-        let num_cores = (num_cpus::get()).max(1);
+        let num_cores = num_cpus::get();
         println!("Thread pool: Spooling up {} threads", num_cores);
         
         let job_queue = JobQueue::new();
@@ -90,20 +90,22 @@ impl ThreadPool {
     }
 
     pub fn push_job(&self, job_task: Arc<RwLock<dyn JobTask + Send + Sync + 'static>>) -> Arc<JobCounter> {
-        self.thread_wake_event.wake_threads(); // notify threads to wake
+        //self.thread_wake_event.wake_threads(); // notify threads to wake
         let job_counter = Arc::new(JobCounter::new(1));
         let job_descriptor = JobDescriptor::new(job_task, job_counter.clone());
         self.job_queue.push(job_descriptor);
+        self.thread_wake_event.wake_threads(); // notify threads to wake
         job_counter
     }
 
     pub fn push_job_array(&self, job_tasks: &Vec<Arc<RwLock<dyn JobTask + Send + Sync + 'static>>>) -> Arc<JobCounter> {
-        self.thread_wake_event.wake_threads(); // notify threads to wake
+        //self.thread_wake_event.wake_threads(); // notify threads to wake
         let job_counter = Arc::new(JobCounter::new(job_tasks.len()));
         for job in job_tasks {
             let job_descriptor = JobDescriptor::new(job.clone(), job_counter.clone());
             self.job_queue.push(job_descriptor);
         }
+        self.thread_wake_event.wake_threads(); // notify threads to wake
         job_counter
     }
 

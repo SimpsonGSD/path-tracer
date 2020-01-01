@@ -3,7 +3,19 @@ use math::*;
 use hitable::HitRecord;
 use texture::{Texture, ConstantTexture, ThreadsafeTexture};
 use std::sync::Arc;
-use std::f64::consts::FRAC_1_PI;
+use std::f64::consts::{FRAC_1_PI, PI};
+use crate::onb;
+
+fn random_cosine_direction() -> Vec3 {
+    let r1 = random::rand();
+    let r2 = random::rand();
+    let z = (1.0 - r2).sqrt();
+    let phi = 2.0 * PI * r1;
+    let r2_sqrt = r2.sqrt();
+    let x = phi.cos() * r2_sqrt;
+    let y = phi.sin() * r2_sqrt;
+    Vec3::new(x, y, z)
+}
 
 fn random_in_unit_sphere() -> Vec3 {
     let mut p: Vec3;
@@ -248,11 +260,24 @@ impl Material for Lambertian {
         }
     }
 
+    //fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult> {
+    //    let target = rec.p + rec.normal + random_in_unit_sphere();
+    //    let scattered = Ray::new(rec.p, target - rec.p, r_in.time);
+    //    let albedo = self.albedo.value(rec.u, rec.v, &rec.p);
+    //    let pdf = vec3::dot(&rec.normal, &Vec3::new_unit_vector(&//scattered.direction)) * FRAC_1_PI;
+    //    Some(ScatterResult {
+    //        scattered, 
+    //        albedo, 
+    //        pdf
+    //    })
+    //}
+
     fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult> {
-        let target = rec.p + rec.normal + random_in_unit_sphere();
-        let scattered = Ray::new(rec.p, target - rec.p, r_in.time);
+        let uvw = onb::ONB::build_from_w(rec.normal);
+        let direction = uvw.local(random_cosine_direction());
+        let scattered = Ray::new(rec.p, Vec3::new_unit_vector(&direction), r_in.time);
         let albedo = self.albedo.value(rec.u, rec.v, &rec.p);
-        let pdf = vec3::dot(&rec.normal, &Vec3::new_unit_vector(&scattered.direction)) * FRAC_1_PI;
+        let pdf = vec3::dot(&uvw.w, &scattered.direction) * FRAC_1_PI;
         Some(ScatterResult {
             scattered, 
             albedo, 

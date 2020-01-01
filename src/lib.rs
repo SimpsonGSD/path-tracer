@@ -66,6 +66,7 @@ mod rect;
 mod axis_aligned_box;
 mod scene;
 mod volume;
+mod onb;
 
 use math::*;
 use hitable::*;
@@ -419,8 +420,14 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
         let user_input = input::UserInput::poll_events_loop(&mut events_loop, &mut window, &mut app_user_input_state);  
 
-        if config.realtime {
-            if app_user_input_state.grabbed {
+        if app_user_input_state.grabbed {
+            if config.realtime {
+                if user_input.keys_pressed.contains(&VirtualKeyCode::T) {
+                    aux.tonemapper_args.exposure_numframes_xx[0] += 0.1;
+                } else if user_input.keys_pressed.contains(&VirtualKeyCode::R) {
+                    aux.tonemapper_args.exposure_numframes_xx[0] -= 0.1;
+                }
+
                 if user_input.keys_pressed.contains(&VirtualKeyCode::O) {
                     clear_scene = true;
                     let mut scene_state_writable = scene_state.write();
@@ -437,12 +444,6 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
                     let mut scene_state_writable = scene_state.write();
                     scene_state_writable.disable_emissive = !scene_state_writable.disable_emissive;
                     clear_scene = true;
-                }
-
-                if user_input.keys_pressed.contains(&VirtualKeyCode::T) {
-                    aux.tonemapper_args.exposure_numframes_xx[0] += 0.1;
-                } else if user_input.keys_pressed.contains(&VirtualKeyCode::R) {
-                    aux.tonemapper_args.exposure_numframes_xx[0] -= 0.1;
                 }
 
                 if user_input.keys_pressed.contains(&VirtualKeyCode::K) {
