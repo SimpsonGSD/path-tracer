@@ -118,10 +118,10 @@ impl TraceSceneBatchJob {
         self.num_frames += 1;//if self.num_frames == 500 {0} else {1};
         let read_state = self.shared_scene_read_state.read();
 
-        if read_state.config.realtime && random::rand() < CHANCE_TO_SKIP_TASK_PER_FRAME {
-            self.shared_scene_write_state.notify_task_completion();
-            return;
-        }
+        //if read_state.config.realtime && random::rand() < CHANCE_TO_SKIP_TASK_PER_FRAME {
+        //    self.shared_scene_write_state.notify_task_completion();
+        //    return;
+        //}
 
         for (row_idx, j) in (self.start_xy.1..self.end_xy.1).rev().enumerate() {
 
@@ -158,13 +158,19 @@ impl TraceSceneBatchJob {
 
                 let index = col_idx*4 as usize;
 
-                let num_frames = self.num_frames_per_pixel[local_pixel_idx];
-                let weight = 1.0 / num_frames as f32;
-                let one_minus_weight: f32 = 1.0 - weight;
+                if read_state.config.realtime {
+                    let num_frames = self.num_frames_per_pixel[local_pixel_idx];
+                    let weight = 1.0 / num_frames as f32;
+                    let one_minus_weight: f32 = 1.0 - weight;
 
-                dest_buffer_row_slice[index]     = (pixel_colour.x as f32) * weight + dest_buffer_row_slice[index    ] * one_minus_weight;
-                dest_buffer_row_slice[index + 1] = (pixel_colour.y as f32) * weight + dest_buffer_row_slice[index + 1] * one_minus_weight;
-                dest_buffer_row_slice[index + 2] = (pixel_colour.z as f32) * weight + dest_buffer_row_slice[index + 2] * one_minus_weight;
+                    dest_buffer_row_slice[index]     = (pixel_colour.x as f32) * weight + dest_buffer_row_slice[index    ] * one_minus_weight;
+                    dest_buffer_row_slice[index + 1] = (pixel_colour.y as f32) * weight + dest_buffer_row_slice[index + 1] * one_minus_weight;
+                    dest_buffer_row_slice[index + 2] = (pixel_colour.z as f32) * weight + dest_buffer_row_slice[index + 2] * one_minus_weight;
+                } else {
+                    dest_buffer_row_slice[index]     = pixel_colour.x as f32;
+                    dest_buffer_row_slice[index + 1] = pixel_colour.y as f32;
+                    dest_buffer_row_slice[index + 2] = pixel_colour.z as f32;
+                }
 
             }
         }
@@ -205,11 +211,12 @@ fn color(
         }
         return colour + emissive;
     } else {
-        let unit_dir = Vec3::new_unit_vector(&r.direction());
-        let t = 0.5*(unit_dir.y + 1.0);
-        let white = Vec3::from_float(1.0);
-        let sky = Vec3::new(0.5, 0.7, 1.0);
-        return lerp(&white, &sky, t) * sky_brightness;
+        return Vec3::from_float(0.0);
+        //let unit_dir = Vec3::new_unit_vector(&r.direction());
+        //let t = 0.5*(unit_dir.y + 1.0);
+        //let white = Vec3::from_float(1.0);
+        //let sky = Vec3::new(0.5, 0.7, 1.0);
+        //return lerp(&white, &sky, t) * sky_brightness;
     }
 }
 

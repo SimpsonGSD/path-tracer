@@ -281,7 +281,7 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
         frames: FRAMES_IN_FLIGHT as usize,
         hw_alignment,
         tonemapper_args: node::tonemap::TonemapperArgs {
-            exposure_numframes_xx: [1.0, 1.0, 0.0, 0.0],
+            exposure_numframes_xx: [1.3, 1.0, 0.0, 0.0],
         },
         source_buffer: Some(source_buffer)
     };
