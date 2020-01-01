@@ -540,8 +540,28 @@ pub fn run(config: Config) -> Result<(), failure::Error>{
 
             // write image 
             if OUTPUT_IMAGE_ON_CLOSE || !config.realtime {
-                let image_file_name = "output.ppm";
-                save_rgb_texture_as_ppm(image_file_name, &convert_to_rgb_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
+                // save up to 10 versions so we can have some sort of local history for comparisons
+                let image_file_name = "output";
+                let image_file_ext = ".ppm";
+                let mut oldest_file_version = 0;
+                let mut oldest_file_time = std::time::SystemTime::now();
+                for i in 0..10 {
+                    let image_path_string = [image_file_name, &(i as u32).to_string(), image_file_ext].concat();
+                    let image_path = std::path::Path::new(&image_path_string);
+                    if !image_path.exists() {
+                        oldest_file_version = i;
+                        break;
+                    } else {
+                        let file_time = image_path.metadata().unwrap().modified().unwrap();
+                        if oldest_file_time > file_time {
+                            oldest_file_time = file_time;
+                            oldest_file_version = i;
+                        } 
+                    }
+                }
+                let image_path_string = [image_file_name, &(oldest_file_version as u32).to_string(), image_file_ext].concat();
+                let image_path = std::path::Path::new(&image_path_string);
+                save_rgb_texture_as_ppm(&image_path, &convert_to_rgb_u8_and_gamma_correct(scene_output.buffer.read()), image_size);
             }
 
             frame_graph.take().unwrap().dispose(&mut rendy.factory, &mut aux);
@@ -589,7 +609,7 @@ fn save_bgr_texture_as_ppm(filename: &str, bgr_buffer: &Vec<u8>, buffer_size: (u
 }
 
 #[allow(dead_code)]
-fn save_rgb_texture_as_ppm(filename: &str, buffer: &Vec<u8>, buffer_size: (u32,u32)) {
+fn save_rgb_texture_as_ppm(filename: &std::path::Path, buffer: &Vec<u8>, buffer_size: (u32,u32)) {
     
     let timer = Instant::now();
     
@@ -615,7 +635,7 @@ fn save_rgb_texture_as_ppm(filename: &str, buffer: &Vec<u8>, buffer_size: (u32,u
 
     let duration = timer.elapsed();
     let duration_in_secs = duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9;
-    println!("{} saved in {}s", filename, duration_in_secs);
+    println!("{} saved in {}s", filename.file_name().unwrap().to_str().unwrap(), duration_in_secs);
 }
 
 #[allow(dead_code)]
