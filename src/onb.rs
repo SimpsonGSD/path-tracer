@@ -15,8 +15,8 @@ impl ONB {
         }
     }
 
-    pub fn build_from_w(n: Vec3) -> Self {
-        let w = Vec3::new_unit_vector(&n);
+    pub fn build_from_w(n: &Vec3) -> Self {
+        let w = Vec3::new_unit_vector(n);
         let a;
         if w.x.abs() > 0.9 {
             a = Vec3::new(0.0, 1.0, 0.0);

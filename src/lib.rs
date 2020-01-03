@@ -836,7 +836,8 @@ fn cornell_box(aspect: f64) -> (Box<ThreadsafeHitable>, Camera) {
     scene_builder
         .add_hitable(
             Arc::new(AxisAlignedRect::new(213.0, 343.0, 227.0, 332.0, 554.0, AxisAlignedRectAxis::Y, light))
-        );
+        )
+        .flip_normals();
     scene_builder
         .add_hitable(
             Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::Y, white_mat.clone()))

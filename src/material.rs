@@ -4,7 +4,8 @@ use hitable::HitRecord;
 use texture::{Texture, ConstantTexture, ThreadsafeTexture};
 use std::sync::Arc;
 use std::f64::consts::{FRAC_1_PI, PI};
-use crate::onb;
+use crate::onb::ONB;
+use hitable::ThreadsafeHitable;
 
 fn random_cosine_direction() -> Vec3 {
     let r1 = random::rand();
@@ -140,10 +141,24 @@ pub trait Material {
     fn scattering_pdf(&self, _r_in: &Ray, _rec: &HitRecord, _scattered: &Ray) -> f64 {
         0.0
     }
-    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3;
+    fn emitted(&self, _ray: &Ray, _rec: &HitRecord, _u: f64, _v: f64, _point: &Vec3) -> Vec3 {
+        Vec3::from_float(0.0)
+    }
 }
 
 pub type ThreadsafeMaterial = dyn Material + Send + Sync;
+
+pub struct  DummyMaterial;
+impl DummyMaterial {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+impl Material for DummyMaterial {
+    fn scatter(&self, _r_in: &Ray, _rec: &HitRecord) -> Option<ScatterResult> {
+        None
+    }
+}
 
 pub struct Dielectric {
     ref_idx: f64
@@ -194,11 +209,6 @@ impl Material for Dielectric {
         let pdf = 1.0;
         Some(ScatterResult{scattered, albedo, pdf})
     }
-
-    fn emitted(&self, _u: f64, _v: f64, _point: &Vec3) -> Vec3 {
-        Vec3::from_float(0.0)
-    }
-
 }
 
 pub struct Metal {
@@ -229,10 +239,6 @@ impl Material for Metal{
         } else {
             None
         }
-    }
-
-    fn emitted(&self, _u: f64, _v: f64, _point: &Vec3) -> Vec3 {
-        Vec3::from_float(0.0)
     }
 }
 
@@ -273,7 +279,7 @@ impl Material for Lambertian {
     //}
 
     fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult> {
-        let uvw = onb::ONB::build_from_w(rec.normal);
+        let uvw = ONB::build_from_w(&rec.normal);
         let direction = uvw.local(random_cosine_direction());
         let scattered = Ray::new(rec.p, Vec3::new_unit_vector(&direction), r_in.time);
         let albedo = self.albedo.value(rec.u, rec.v, &rec.p);
@@ -285,7 +291,7 @@ impl Material for Lambertian {
         })
     }
 
-    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
+    fn emitted(&self, _ray: &Ray, _rec: &HitRecord, u: f64, v: f64, point: &Vec3) -> Vec3 {
         if self.emissive > 0.0 {self.albedo.value(u, v, point) * self.emissive} else {Vec3::from_float(0.0)}
     }
 }
@@ -307,8 +313,12 @@ impl Material for DiffuseLight {
         None
     }
 
-    fn emitted(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
-        self.texture.value(u, v, point)
+    fn emitted(&self, ray: &Ray, rec: &HitRecord, u: f64, v: f64, point: &Vec3) -> Vec3 {
+        if dot(&rec.normal, &ray.direction) < 0.0 {
+            self.texture.value(u, v, point)
+        } else {
+            Vec3::new_zero_vector()
+        }
     }
 }
 
@@ -331,8 +341,86 @@ impl Material for Isotropic {
         let pdf = 1.0;
         Some(ScatterResult{scattered, albedo, pdf})
     } 
+}
 
-    fn emitted(&self, _u: f64, _v: f64, _point: &Vec3) -> Vec3{
-        Vec3::new_zero_vector()
+pub trait PDF {
+    fn value(&self, direction: &Vec3) -> f64;
+    fn generate(&self) -> Vec3;
+}
+
+pub struct CosinePDF {
+    uvw: ONB,
+}
+
+impl CosinePDF {
+    pub fn new(w: &Vec3) -> Self {
+        Self {
+            uvw: ONB::build_from_w(w)
+        }
+    }
+}
+
+// cosine pdf that just computes the dot product (cosine) of the
+// basis normal and incoming direction. Returns 0.0 for directions
+// with negative result
+impl PDF for CosinePDF {
+    fn value(&self, direction: &Vec3) -> f64 {
+        let cosine = dot(&Vec3::new_unit_vector(direction),&self.uvw.w);
+        if cosine > 0.0 {
+            cosine * std::f64::consts::FRAC_1_PI
+        } else {
+            0.0
+        }
+    }
+    fn generate(&self) -> Vec3 {
+        self.uvw.local(random_cosine_direction())
+    }
+}
+
+pub struct HittablePDF {
+    origin: Vec3,
+    hittable: Arc<ThreadsafeHitable>,
+}
+
+impl HittablePDF {
+    pub fn new(hittable: Arc<ThreadsafeHitable>, origin: Vec3) -> Self {
+        Self {
+            origin,
+            hittable
+        }
+    }
+}
+
+impl PDF for HittablePDF {
+    fn value(&self, direction: &Vec3) -> f64 {
+        self.hittable.pdf_value(&self.origin, direction)
+    }
+    fn generate(&self) -> Vec3 {
+        self.hittable.random(&self.origin)
+    }
+}
+
+pub struct MixturePDF {
+    pdfs: [Arc<dyn PDF + Send + Sync>; 2]
+}
+
+impl MixturePDF {
+    pub fn new(pdf0: Arc<dyn PDF + Send + Sync>, pdf1: Arc<dyn PDF + Send + Sync> ) -> Self {
+        Self {
+            pdfs: [pdf0, pdf1]
+        }
+    }
+}
+
+impl PDF for MixturePDF {
+    fn value(&self,direction: &Vec3) -> f64 {
+        0.5 * self.pdfs[0].value(direction) + 0.5*self.pdfs[1].value(direction)
+    }
+    fn generate(&self) -> Vec3 {
+        if random::rand() < 0.5 {
+            self.pdfs[0].generate()
+        } else {
+            self.pdfs[1].generate()
+        }
     }
 }

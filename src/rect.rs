@@ -19,6 +19,7 @@ pub struct AxisAlignedRect {
     c: f64, // corresponds to the axis denoted by plane_axis
     a_size: f64,
     b_size: f64,
+    area: f64,
     plane_axis: AxisAlignedRectAxis,
 }
 
@@ -41,6 +42,9 @@ impl AxisAlignedRect {
         if (bmin - bmax).abs() < FLT_TOLERANCE {
             panic!("bmin != bmax, no axis-aligned plane supplied, bmin = {}, bmax = {}", bmin, bmax);
         }
+        
+        let a_size = amax - amin;
+        let b_size = bmax - bmin;
 
         Self {
             material,
@@ -49,8 +53,9 @@ impl AxisAlignedRect {
             bmin,
             bmax,
             c,
-            a_size: amax - amin,
-            b_size: bmax - bmin,
+            a_size,
+            b_size,
+            area: a_size * b_size,
             plane_axis,
         }
     }
@@ -114,5 +119,27 @@ impl Hitable for AxisAlignedRect {
             AxisAlignedRectAxis::Y => AABB::new(Vec3::new( self.amin, self.c-0.0001, self.bmin), Vec3::new(self.amax, self.c+0.0001, self.bmax)),
             AxisAlignedRectAxis::Z => AABB::new(Vec3::new(self.amin, self.bmin, self.c-0.0001), Vec3::new(self.amax, self.bmax, self.c + 0.0001)),
         }
+    }
+
+    fn pdf_value(&self, origin: &Vec3, v: &Vec3) -> f64 {
+        if let Some(rec) = self.hit(&Ray::new(*origin, *v, 0.0), 0.001, std::f64::MAX) {
+            let v_sq_length = v.squared_length();
+            let distance_sq = rec.t * rec.t * v_sq_length;
+            let cosine = (dot(v, &rec.normal) / v_sq_length.sqrt()).abs();
+            distance_sq / (cosine * self.area)
+        } else {
+            0.0
+        }
+    }
+
+    fn random(&self, origin: &Vec3) -> Vec3 {
+        let random_a = self.amin + random::rand()*(self.a_size);
+        let random_b = self.bmin + random::rand()*(self.b_size);
+        let random_point = match self.plane_axis {
+            AxisAlignedRectAxis::X => Vec3::new(self.c, random_a, random_b),
+            AxisAlignedRectAxis::Y => Vec3::new(random_a, self.c, random_b),
+            AxisAlignedRectAxis::Z => Vec3::new(random_a, random_b, self.c),
+        };
+        random_point - origin
     }
 }

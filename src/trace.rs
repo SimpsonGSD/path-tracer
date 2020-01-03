@@ -10,6 +10,8 @@ use camera::Camera;
 use jobs::JobTask;
 use jobs::MultiSliceReadWriteLock;
 use super::Config;
+use material::{PDF, CosinePDF, HittablePDF, MixturePDF, DummyMaterial};
+use rect::{AxisAlignedRect, AxisAlignedRectAxis};
 
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
 const RENDER_UPDATE_LATENCY: u32 = 20; 
@@ -147,7 +149,7 @@ impl TraceSceneBatchJob {
                     let v: f64 = ((j as f64) + random) / (self.image_size.1 as f64);
 
                     let r = read_state.cam.get_ray(u, v);
-                    pixel_colour += color(&r, &read_state.world, 0, read_state.sky_brightness, read_state.disable_emissive, read_state.config.max_depth);
+                    pixel_colour += color(&r, &read_state.world, 0, read_state.config.max_depth);
 
                     // SS: Debug uv image
                     // col += Vec3::new(u, v, 0.0);
@@ -190,26 +192,26 @@ fn color(
     r : &Ray, 
     world: &Box<ThreadsafeHitable>, 
     depth: i32, 
-    sky_brightness: f64, 
-    disable_emissive: bool, 
     max_depth: i32) -> Vec3 {
 
     if let Some(hit_record) = world.hit(r, 0.001, f64::MAX) {
-        let emissive = if !disable_emissive {   
-            hit_record.mat.emitted(hit_record.u, hit_record.v, &hit_record.p)
-        } else {
-            Vec3::from_float(0.0)
-        };
-        let mut colour = Vec3::new_zero_vector();
+        let emissive = hit_record.mat.emitted(r, &hit_record, hit_record.u, hit_record.v, &hit_record.p);
         if depth < max_depth {
             if let Some(scatter_result) = hit_record.mat.scatter(r, &hit_record) {
-                let pdf = hit_record.mat.scattering_pdf(r, &hit_record, &scatter_result.scattered);
-                colour = scatter_result.albedo * pdf;
-                let scattered_ray_colour = color(&scatter_result.scattered, world, depth+1, sky_brightness, disable_emissive, max_depth) / scatter_result.pdf;
-                colour *= scattered_ray_colour;
+                let light_shape = AxisAlignedRect::new(213.0,343.0,227.0,332.0,554.0,AxisAlignedRectAxis::Y, Arc::new(DummyMaterial::new()));
+                let hittable_pdf = HittablePDF::new(Arc::new(light_shape), hit_record.p);
+                let cosine_pdf = CosinePDF::new(&hit_record.normal);
+                let pdf = MixturePDF::new(Arc::new(hittable_pdf), Arc::new(cosine_pdf));
+                let scattered = Ray::new(hit_record.p, pdf.generate(), r.time);
+                let pdf_val = pdf.value(&scattered.direction);
+                let colour = scatter_result.albedo 
+                             * hit_record.mat.scattering_pdf(r, &hit_record, &scattered)
+                             * color(&scattered, world, depth+1, max_depth)
+                             / pdf_val;
+                return colour + emissive;
             }
         }
-        return colour + emissive;
+        return emissive;
     } else {
         return Vec3::from_float(0.0);
         //let unit_dir = Vec3::new_unit_vector(&r.direction());
