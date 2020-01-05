@@ -10,7 +10,7 @@ use camera::Camera;
 use jobs::JobTask;
 use jobs::MultiSliceReadWriteLock;
 use super::Config;
-use material::{PDF, CosinePDF, HittablePDF, MixturePDF, DummyMaterial};
+use material::{PDF, HittablePDF, MixturePDF, DummyMaterial};
 use rect::{AxisAlignedRect, AxisAlignedRectAxis};
 
 // Number of lines to wait before updating the backbuffer. Smaller the number worse the performance.
@@ -119,6 +119,13 @@ impl TraceSceneBatchJob {
         //self.num_frames += if self.num_frames == 500 {0} else {1};
         self.num_frames += 1;//if self.num_frames == 500 {0} else {1};
         let read_state = self.shared_scene_read_state.read();
+        
+        let hlist: Arc<ThreadsafeHitable>  = {
+            let light_shape = AxisAlignedRect::new(213.0,343.0,227.0,332.0,554.0,AxisAlignedRectAxis::Y, Arc::new(DummyMaterial::new()));
+            let glass_sphere = crate::sphere::Sphere::new(Vec3::new(190.0, 90.0, 190.0), 90.0, Arc::new(DummyMaterial::new()));
+            let list: Vec<Arc<ThreadsafeHitable>> = vec![Arc::new(light_shape), Arc::new(glass_sphere)];
+            Arc::new(HitableList::new(list))
+        };
 
         //if read_state.config.realtime && random::rand() < CHANCE_TO_SKIP_TASK_PER_FRAME {
         //    self.shared_scene_write_state.notify_task_completion();
@@ -149,7 +156,7 @@ impl TraceSceneBatchJob {
                     let v: f64 = ((j as f64) + random) / (self.image_size.1 as f64);
 
                     let r = read_state.cam.get_ray(u, v);
-                    pixel_colour += color(&r, &read_state.world, 0, read_state.config.max_depth);
+                    pixel_colour += color(&r, &read_state.world,  &hlist, 0, read_state.config.max_depth);
 
                     // SS: Debug uv image
                     // col += Vec3::new(u, v, 0.0);
@@ -190,7 +197,8 @@ impl JobTask for TraceSceneBatchJob {
 
 fn color(
     r : &Ray, 
-    world: &Box<ThreadsafeHitable>, 
+    world: &Box<ThreadsafeHitable>,
+    shape_integrators: &Arc<ThreadsafeHitable>,
     depth: i32, 
     max_depth: i32) -> Vec3 {
 
@@ -198,17 +206,20 @@ fn color(
         let emissive = hit_record.mat.emitted(r, &hit_record, hit_record.u, hit_record.v, &hit_record.p);
         if depth < max_depth {
             if let Some(scatter_result) = hit_record.mat.scatter(r, &hit_record) {
-                let light_shape = AxisAlignedRect::new(213.0,343.0,227.0,332.0,554.0,AxisAlignedRectAxis::Y, Arc::new(DummyMaterial::new()));
-                let hittable_pdf = HittablePDF::new(Arc::new(light_shape), hit_record.p);
-                let cosine_pdf = CosinePDF::new(&hit_record.normal);
-                let pdf = MixturePDF::new(Arc::new(hittable_pdf), Arc::new(cosine_pdf));
-                let scattered = Ray::new(hit_record.p, pdf.generate(), r.time);
-                let pdf_val = pdf.value(&scattered.direction);
-                let colour = scatter_result.albedo 
-                             * hit_record.mat.scattering_pdf(r, &hit_record, &scattered)
-                             * color(&scattered, world, depth+1, max_depth)
-                             / pdf_val;
-                return colour + emissive;
+                if scatter_result.is_specular {
+                    return scatter_result.albedo *
+                        color(&scatter_result.specular_ray, world, shape_integrators, depth+1, max_depth);
+                } else {
+                    let hittable_pdf = HittablePDF::new(shape_integrators.clone(), hit_record.p);
+                    let pdf = MixturePDF::new(Arc::new(hittable_pdf), scatter_result.pdf.clone());
+                    let scattered = Ray::new(hit_record.p, pdf.generate(), r.time);
+                    let pdf_val = pdf.value(&scattered.direction);
+                    let colour = scatter_result.albedo 
+                                * hit_record.mat.scattering_pdf(r, &hit_record, &scattered)
+                                * color(&scattered, world, shape_integrators, depth+1, max_depth)
+                                / pdf_val;
+                    return colour + emissive;
+                }
             }
         }
         return emissive;

@@ -3,6 +3,26 @@ use material::Material;
 use hitable::*;
 use std::sync::Arc;
 use std::f64::consts::{PI, FRAC_PI_2};
+use onb::ONB;
+
+fn get_sphere_uv(point: &Vec3) -> (f64, f64) {
+    let phi = point.z.atan2(point.x);
+    let theta = point.y.asin();
+    let u = 1.0 - (phi + PI) / (PI * 2.0); // convert from [-pi, pi] to [1, 0]
+    let v = (theta + FRAC_PI_2) / PI; // convert from [-pi/2, pi/2] tp [0, 1]
+    (u, v)
+}
+
+fn random_to_sphere(radius: f64, distance_squared: f64) -> Vec3 {
+    let r1 = random::rand();
+    let r2 = random::rand();
+    let z = 1.0 + r2*((1.0-radius*radius/distance_squared).sqrt()-1.0);
+    let phi = 2.0*PI*r1;
+    let c = (1.0-z*z).sqrt();
+    let x = phi.cos()*c;
+    let y = phi.sin()*c;
+    Vec3::new(x, y, z)
+}
 
 pub struct Sphere {
     center: Vec3,
@@ -18,14 +38,6 @@ impl Sphere {
             material,
         }
     }
-}
-
-fn get_sphere_uv(point: &Vec3) -> (f64, f64) {
-    let phi = point.z.atan2(point.x);
-    let theta = point.y.asin();
-    let u = 1.0 - (phi + PI) / (PI * 2.0); // convert from [-pi, pi] to [1, 0]
-    let v = (theta + FRAC_PI_2) / PI; // convert from [-pi/2, pi/2] tp [0, 1]
-    (u, v)
 }
 
 impl Hitable for Sphere {
@@ -70,6 +82,22 @@ impl Hitable for Sphere {
 
     fn bounding_box(&self, _t0: f64, _t1: f64) -> AABB {
         AABB::new(&self.center - Vec3::from_float(self.radius), &self.center + Vec3::from_float(self.radius))
+    }
+
+    fn pdf_value(&self, origin: &Vec3, direction: &Vec3) -> f64 {
+        if let Some(_) = self.hit(&Ray::new(*origin, *direction, 0.0), 0.001, std::f64::MAX) {
+            let cos_theta_max = (1.0 - self.radius*self.radius/(self.center-origin).squared_length()).sqrt();
+            let solid_angle = 2.0*PI*(1.0-cos_theta_max);
+            1.0 / solid_angle
+        } else {
+            0.0
+        }
+    }
+    fn random(&self, origin: &Vec3) -> Vec3 {
+        let direction = self.center - origin;
+        let distance_sq = direction.squared_length();
+        let uvw = ONB::build_from_w(&direction);
+        uvw.local(random_to_sphere(self.radius, distance_sq))
     }
 }
 

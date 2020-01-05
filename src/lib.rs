@@ -822,6 +822,14 @@ fn cornell_box(aspect: f64) -> (Box<ThreadsafeHitable>, Camera) {
         )
         .diffuse_light();
 
+    let alluminium = material_builder
+        .set_albedo(Vec3::new(0.8, 0.85, 0.88))
+        .metal();
+    
+    let glass = material_builder
+        .set_refraction_index(1.5)
+        .dielectric();
+
     let mut scene_builder = scene::SceneBuilder::new();
     
     scene_builder
@@ -852,12 +860,18 @@ fn cornell_box(aspect: f64) -> (Box<ThreadsafeHitable>, Camera) {
             Arc::new(AxisAlignedRect::new(0.0, 555.0, 0.0, 555.0, 555.0, AxisAlignedRectAxis::Z, white_mat.clone()))
         )
         .flip_normals();
+    //scene_builder
+        //.add_hitable(
+           // Arc::new(AxisAlignedBox::new(Vec3::new_zero_vector(), Vec3::new(165.0, 165.0, 165.0), white_mat.clone()))
+        //)
+        //.rotate_y(-18.0)
+        //.translate(Vec3::new(130.0, 0.0, 65.0));
+        
     scene_builder
         .add_hitable(
-            Arc::new(AxisAlignedBox::new(Vec3::new_zero_vector(), Vec3::new(165.0, 165.0, 165.0), white_mat.clone()))
-        )
-        .rotate_y(-18.0)
-        .translate(Vec3::new(130.0, 0.0, 65.0));
+            Arc::new(Sphere::new(Vec3::new(190.0, 90.0, 190.0), 90.0, glass.clone()))
+        );
+
     scene_builder
         .add_hitable(
             Arc::new(AxisAlignedBox::new(Vec3::new_zero_vector(), Vec3::new(165.0, 330.0, 165.0), white_mat.clone()))

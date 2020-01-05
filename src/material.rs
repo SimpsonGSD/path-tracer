@@ -131,13 +131,14 @@ impl MaterialBuilder {
 }  
 
 pub struct ScatterResult {
-    pub scattered: Ray,
+    pub specular_ray: Ray,
+    pub is_specular: bool,
     pub albedo: Vec3,
-    pub pdf: f64,
+    pub pdf: Arc<dyn PDF>,
 }
 
 pub trait Material {
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult>; 
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult>;
     fn scattering_pdf(&self, _r_in: &Ray, _rec: &HitRecord, _scattered: &Ray) -> f64 {
         0.0
     }
@@ -199,15 +200,15 @@ impl Material for Dielectric {
              reflect_prob = 1.0;
         }
 
-        let scattered;
+        let specular_ray;
+        let is_specular = true;
         if random::rand() < reflect_prob {
-            scattered = Ray::new(rec.p.clone(), reflected, r_in.time());
+            specular_ray = Ray::new(rec.p.clone(), reflected, r_in.time());
         } else {
-            scattered = Ray::new(rec.p.clone(), refracted, r_in.time());
+            specular_ray = Ray::new(rec.p.clone(), refracted, r_in.time());
         }
 
-        let pdf = 1.0;
-        Some(ScatterResult{scattered, albedo, pdf})
+        Some(ScatterResult{is_specular, specular_ray, albedo, pdf: Arc::new(DummyPDF{})})
     }
 }
 
@@ -229,16 +230,23 @@ impl Material for Metal{
     fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult> {
         let reflected = reflect(&Vec3::new_unit_vector(&r_in.direction), &rec.normal);
         let outgoing_ray_dir = reflected + self.fuzz*random_in_unit_sphere();
-        let scattered = Ray::new(rec.p.clone(), outgoing_ray_dir, r_in.time());
+        let specular_ray = Ray::new(rec.p.clone(), outgoing_ray_dir, r_in.time());
+
+        Some(ScatterResult {
+            specular_ray,
+            is_specular: true,
+            albedo: self.albedo,
+            pdf: Arc::new(DummyPDF{})
+        })
 
         // check to see if outgoing ray is reflect externally or not, otherwise it is absorbed
-        if vec3::dot(&scattered.direction(), &rec.normal) > 0.0 {
-            let albedo = self.albedo.clone();
-            let pdf = 1.0;
-            Some(ScatterResult{scattered, albedo, pdf})
-        } else {
-            None
-        }
+      //  if vec3::dot(&scattered.direction(), &rec.normal) > 0.0 {
+       //     let albedo = self.albedo.clone();
+        //    let pdf = 1.0;
+       //     Some(ScatterResult{scattered, albedo, pdf})
+      //  } else {
+      //      None
+      //  }
     }
 }
 
@@ -278,16 +286,17 @@ impl Material for Lambertian {
     //    })
     //}
 
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult> {
-        let uvw = ONB::build_from_w(&rec.normal);
-        let direction = uvw.local(random_cosine_direction());
-        let scattered = Ray::new(rec.p, Vec3::new_unit_vector(&direction), r_in.time);
+    fn scatter(&self, _r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult> {
+        //let uvw = ONB::build_from_w(&rec.normal);
+        //let direction = uvw.local(random_cosine_direction());
+        //let scattered = Ray::new(rec.p, Vec3::new_unit_vector(&direction), r_in.time);
         let albedo = self.albedo.value(rec.u, rec.v, &rec.p);
-        let pdf = vec3::dot(&uvw.w, &scattered.direction) * FRAC_1_PI;
+        //let pdf = vec3::dot(&uvw.w, &scattered.direction) * FRAC_1_PI;
         Some(ScatterResult {
-            scattered, 
+            specular_ray: Ray::default(), 
+            is_specular: false,
             albedo, 
-            pdf
+            pdf: Arc::new(CosinePDF::new(&rec.normal)),
         })
     }
 
@@ -336,10 +345,9 @@ impl Isotropic {
 
 impl Material for Isotropic {
     fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<ScatterResult>{
-        let scattered = Ray::new(rec.p, random_in_unit_sphere(), r_in.time);
+        let specular_ray = Ray::new(rec.p, random_in_unit_sphere(), r_in.time);
         let albedo = self.albedo.value(rec.u, rec.v, &rec.p);
-        let pdf = 1.0;
-        Some(ScatterResult{scattered, albedo, pdf})
+        Some(ScatterResult{is_specular: false, specular_ray, albedo, pdf: Arc::new(DummyPDF{})})
     } 
 }
 
@@ -401,11 +409,11 @@ impl PDF for HittablePDF {
 }
 
 pub struct MixturePDF {
-    pdfs: [Arc<dyn PDF + Send + Sync>; 2]
+    pdfs: [Arc<dyn PDF>; 2]
 }
 
 impl MixturePDF {
-    pub fn new(pdf0: Arc<dyn PDF + Send + Sync>, pdf1: Arc<dyn PDF + Send + Sync> ) -> Self {
+    pub fn new(pdf0: Arc<dyn PDF>, pdf1: Arc<dyn PDF> ) -> Self {
         Self {
             pdfs: [pdf0, pdf1]
         }
@@ -422,5 +430,17 @@ impl PDF for MixturePDF {
         } else {
             self.pdfs[1].generate()
         }
+    }
+}
+
+pub struct DummyPDF {
+
+}
+impl PDF for DummyPDF {
+    fn value(&self, _direction: &Vec3) ->f64 {
+        0.0
+    }
+    fn generate(&self) -> Vec3 {
+        Vec3::new_zero_vector()
     }
 }

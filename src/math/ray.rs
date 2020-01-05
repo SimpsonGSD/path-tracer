@@ -31,3 +31,13 @@ impl Ray {
         &self.origin + &(&self.direction * t)
     }
 }
+
+impl Default for Ray {
+    fn default() -> Self {
+        Self {
+            origin: Vec3::new_zero_vector(),
+            direction: Vec3::new(1.0,0.0,0.0),
+            time: 0.0,
+        }
+    }
+}

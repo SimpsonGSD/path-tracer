@@ -63,6 +63,18 @@ impl Hitable for HitableList {
     fn bounding_box(&self, _t0: f64, _t1: f64) -> AABB {
         unreachable!(); 
     }
+    fn pdf_value(&self, origin: &Vec3, direction: &Vec3) -> f64 {
+        let weight = 1.0 / self.list.len() as f64;
+        let mut sum = 0.0;
+        for hitable in self.list.iter() {
+            sum += weight * hitable.pdf_value(origin, direction);
+        }
+        sum
+    }
+    fn random(&self, origin: &Vec3) -> Vec3 {
+        let index = (self.list.len() as f64 * random::rand()) as usize;
+        self.list[index].random(origin)
+    }
 }
 
 pub struct FlipNormals {
